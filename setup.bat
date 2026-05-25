@@ -1,5 +1,6 @@
 @echo off
 REM ai-mcs 개발 환경 세팅 스크립트 (Windows x86_64)
+REM Anaconda Prompt에서 실행할 것 (일반 cmd.exe 불가)
 REM macOS/Linux는 setup.sh 참고
 
 echo === ai-mcs 환경 세팅 시작 ===
@@ -24,17 +25,20 @@ if %errorlevel% == 0 (
 )
 conda create -n ai-mcs python=3.9.13 pip -y
 
+REM 환경 활성화 (conda run 대신 activate 사용 - Windows 호환성)
+call conda activate ai-mcs
+
 REM 3. pip 다운그레이드 후 gym==0.19.0 설치
 REM gym==0.19.0은 opencv-python>=3. 스펙이 불완전해 pip 24.1+가 거부함
 REM pip 21.3.1을 끝까지 유지 (복원 시 gym 캐시 메타데이터 검증 실패)
 echo [3/4] gym==0.19.0 설치...
-conda run -n ai-mcs pip install "pip==21.3.1" "setuptools<65" "wheel==0.37.0" --quiet
-conda run -n ai-mcs pip install gym==0.19.0 --no-build-isolation --quiet
+pip install "pip==21.3.1" "setuptools<65" "wheel==0.37.0"
+pip install gym==0.19.0 --no-build-isolation
 
 REM 4. 나머지 패키지 설치 (Windows x86_64는 PyPI wheel 사용)
-REM numpy==1.21.4 명시: plotly 최신버전이 narwhals를 끌어들여 numpy2를 설치할 수 있음
+REM numpy==1.21.4 명시: 최신 plotly가 narwhals를 끌어들여 numpy2를 설치할 수 있음
 echo [4/4] 패키지 설치...
-conda run -n ai-mcs pip install ^
+pip install ^
   "numpy==1.21.4" ^
   absl-py==1.0.0 ^
   cachetools==4.2.4 ^
@@ -96,7 +100,7 @@ conda run -n ai-mcs pip install ^
 echo.
 echo === 완료! ===
 echo.
-echo 환경 활성화:
+echo 다음 사용부터는 Anaconda Prompt에서:
 echo   conda activate ai-mcs
 echo.
 echo PySCFabSim 실행 테스트:
