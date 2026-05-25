@@ -132,33 +132,40 @@ cd insicon-ai-mcs
 
 ### 2. 환경 세팅
 
-**스크립트로 자동 세팅 (권장)**
+> conda가 없다면 [Miniconda](https://docs.conda.io/en/latest/miniconda.html) 설치 후 진행.
+
+**macOS / Linux**
 
 ```bash
-# macOS / Linux
 bash setup.sh
-
-# Windows
-setup.bat
-```
-
-**직접 세팅**
-
-```bash
-conda env create -f environment.yml
 conda activate ai-mcs
 ```
 
-> conda가 없다면 [Miniconda](https://docs.conda.io/en/latest/miniconda.html) 설치 후 진행.
+**Windows** (Anaconda Prompt에서 실행)
+
+```bat
+setup.bat
+conda activate ai-mcs
+```
+
+> `conda env create -f environment.yml` 방식은 **사용 금지** — gym 0.19.0이 pip 24.1+와 호환되지 않아 설치 실패함. 반드시 setup 스크립트를 사용할 것.
 
 ### 3. PySCFabSim 실행 확인
 
 ```bash
 cd external/PySCFabSim
-python main.py
+mkdir greedy          # 결과 저장 폴더 (최초 1회)
+python main.py --dataset SMT2020_HVLM --days 7 --dispatcher fifo --seed 0
 ```
 
-> `pyinstrument` 빨간줄이 뜨는 경우: `environment.yml`에 포함되어 있으므로 conda 환경이 활성화된 상태인지 확인.
+정상 실행 시 `Day 7=== Throughput: ...` 출력 후 종료됨.
+
+| 인자 | 설명 | 선택지 |
+|------|------|--------|
+| `--dataset` | 시뮬레이션 데이터셋 | `SMT2020_HVLM`, `SMT2020_LVHM` |
+| `--days` | 시뮬레이션 기간 (일) | 정수 (테스트: 7, 실험: 730) |
+| `--dispatcher` | 디스패치 규칙 | `fifo`, `cr`, `edd` 등 |
+| `--seed` | 랜덤 시드 | 정수 |
 
 ### 4. 데이터 준비
 
