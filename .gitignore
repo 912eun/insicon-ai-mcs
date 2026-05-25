@@ -1,0 +1,27 @@
+# 원본 데이터 (용량 큼)
+data/smat2022/
+data/raw/
+
+# 학습 결과물
+*.pt
+*.pkl
+*.ckpt
+runs/
+logs/
+results/
+
+# 환경
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

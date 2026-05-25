@@ -1,0 +1,10 @@
+# 팀원 2가 PySCFabSim 버전 충돌 해결 후 여기에 고정
+# pyscfabsim==x.x.x
+
+rware
+stable-baselines3
+gymnasium
+pettingzoo
+torch
+numpy
+pandas
