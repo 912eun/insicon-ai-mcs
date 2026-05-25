@@ -141,11 +141,15 @@ bash setup.sh
 conda activate ai-mcs
 ```
 
-**Windows** (Anaconda Prompt에서 실행)
+**Windows**
+
+> ⚠️ **반드시 Anaconda Prompt에서 실행** — 일반 cmd.exe나 PowerShell에서는 conda 명령을 인식 못 함
+
+시작 메뉴 → **Anaconda Prompt** 검색 → 열기 후:
 
 ```bat
+cd C:\경로\insicon-ai-mcs
 setup.bat
-conda activate ai-mcs
 ```
 
 > `conda env create -f environment.yml` 방식은 **사용 금지** — gym 0.19.0이 pip 24.1+와 호환되지 않아 설치 실패함. 반드시 setup 스크립트를 사용할 것.
