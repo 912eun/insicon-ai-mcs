@@ -6,6 +6,8 @@ dependencies:
   - python=3.9.13
   - pip
   - pip:
+      # gym==0.19.0이 신버전 setuptools와 충돌 → 먼저 다운그레이드
+      - setuptools<65
       # ── PySCFabSim 의존성 (pinned) ──────────────────────────────
       - absl-py==1.0.0
       - atari-py==0.2.9
