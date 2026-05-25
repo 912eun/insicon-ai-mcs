@@ -120,13 +120,50 @@ ai-mcs/
 
 ## 시작하기
 
+### 1. 레포 클론
+
 ```bash
 git clone --recurse-submodules https://github.com/912eun/insicon-ai-mcs.git
 cd insicon-ai-mcs
-pip install -r requirements.txt
 ```
 
-> `data/smat2022/` 원본 데이터는 별도 공유 경로에서 받아서 `data/smat2022/`에 넣어야 한다.
+> `--recurse-submodules` 옵션으로 PySCFabSim도 함께 받아진다.
+> 이미 클론한 경우: `git submodule update --init`
+
+### 2. 환경 세팅
+
+**스크립트로 자동 세팅 (권장)**
+
+```bash
+# macOS / Linux
+bash setup.sh
+
+# Windows
+setup.bat
+```
+
+**직접 세팅**
+
+```bash
+conda env create -f environment.yml
+conda activate ai-mcs
+```
+
+> conda가 없다면 [Miniconda](https://docs.conda.io/en/latest/miniconda.html) 설치 후 진행.
+
+### 3. PySCFabSim 실행 확인
+
+```bash
+cd external/PySCFabSim
+python main.py
+```
+
+> `pyinstrument` 빨간줄이 뜨는 경우: `environment.yml`에 포함되어 있으므로 conda 환경이 활성화된 상태인지 확인.
+
+### 4. 데이터 준비
+
+`data/smat2022/` 원본 데이터는 gitignore 대상이므로 별도로 받아야 한다.
+팀 공유 경로에서 받아서 `data/smat2022/` 아래에 넣으면 된다.
 
 ---
 
