@@ -25,3 +25,15 @@ env/
 
 # OS
 .DS_Store
+
+# ── 여기부터 추가 ──
+
+# SMAT2022 엑셀 (외부 데이터셋)
+*.xlsx
+
+# 시뮬레이터 실험 결과
+simulation_result.json
+path_result.json
+
+# 주피터 체크포인트
+.ipynb_checkpoints/
