@@ -81,23 +81,29 @@ ai-mcs/
 │   └── PySCFabSim/               # git submodule (prosysscience/PySCFabSim-release)
 │
 ├── simulator/
-│   ├── fab_process/              # PySCFabSim 래퍼
-│   │   ├── smt2020/              # SMT2020 데이터셋 설정
-│   │   └── events.py             # 공정 완료 이벤트 추출
-│   ├── amr/                      # RWARE 기반 AMR 시뮬레이터
-│   │   └── maps/                 # SMAT2022 Fab 레이아웃
-│   └── interface/                # ★ 핵심 contribution
-│       ├── schemas/              # 모듈 간 데이터 포맷 계약
-│       ├── event_bridge.py       # PySCFabSim → RWARE 변환
-│       └── feedback.py           # AMR 완료 → 다음 공정 시작
+│   ├── amr/                      # ★ 커스텀 AMR 시뮬레이터
+│   │   ├── simulator.py          # FABSimulator (핵심 시뮬레이터)
+│   │   ├── env.py                # FabAMREnv (gym 환경)
+│   │   └── pathfinding.py        # A* + 예약 테이블 + 속도 프로파일
+│   ├── fab_process/
+│   │   └── smat2022/             # PySCFabSim 연동
+│   │       ├── coupled_env.py    # ★ 공정+AMR 통합 gym 환경 (핵심 contribution)
+│   │       └── transport_hook.py # 공정 완료 이벤트 → 반송 요청 변환
+│   └── interface/
+│       └── schemas/              # 모듈 간 데이터 포맷 계약 (TransportRequest 등)
+│
+├── rware_simulator/              # SMAT2022 데이터 탐색·변환 (탐색 완료)
+│   ├── notebooks/                # SMAT2022 → grid 변환 과정 기록용 노트북
+│   └── output/                   # 변환된 FAB 레이아웃 데이터 (시뮬레이터가 직접 참조)
+│       ├── grid_map.npy          # 장애물 포함 그리드 맵
+│       ├── port_locations.json   # 장비 포트 좌표 (1116개)
+│       └── fab_layout.json       # SMAT2022 메타 + 차량 파라미터(acc/dec/v_max)
 │
 ├── mcs/
 │   ├── dispatcher/
 │   │   ├── base_agent.py         # 4인 RL 공통 인터페이스
-│   │   ├── strategies/           # 팀원별 RL 전략 (비교 후 최적 채택)
-│   │   │   ├── s1/ s2/ s3/ s4/
-│   │   └── agent.py              # 최종 채택본
-│   └── cbs/                      # Conflict-Based Search 경로 계산
+│   │   └── strategies/           # 팀원별 RL 전략 (s1~s4)
+│   └── cbs/                      # Conflict-Based Search 경로 계획
 │
 ├── prediction/                   # LSTM / XGBoost 혼잡 예측
 ├── llm/                          # LLM 운영자 지원
@@ -106,15 +112,13 @@ ai-mcs/
 │   ├── scenarios/                # HV/LM, LV/HM 시나리오
 │   └── runner.py                 # 100 seed 실험 프레임워크
 ├── dashboard/                    # 실시간 모니터링
-├── data/
-│   ├── smat2022/                 # Fab 레이아웃 원본 (gitignore)
-│   └── pipeline/                 # 데이터 수집 파이프라인
+├── data/pipeline/                # 데이터 수집 파이프라인
 ├── tests/
 │   ├── unit/ integration/ mock/
 └── configs/
-    ├── smt2020.yaml
-    └── fab_layout.yaml
 ```
+
+> **RWARE vs 커스텀 FABSimulator**: RWARE는 warehouse shelf-picking 로봇용 gym 프레임워크로, 반도체 Fab의 포트-to-포트 반송 모델에 직접 사용하기 어렵다. `rware_simulator/` 노트북으로 SMAT2022 데이터를 탐색하고 grid 포맷으로 변환한 뒤, 그 output을 기반으로 Fab에 특화된 `FABSimulator`를 직접 구현했다. SMAT2022는 OHT 기준 데이터지만 차량 파라미터(max_speed/acceleration/deceleration)와 레이아웃은 AMR 시뮬레이션에도 그대로 활용한다.
 
 ---
 
