@@ -6,6 +6,7 @@ data/raw/
 *.pt
 *.pkl
 *.ckpt
+*.zip          # sb3 모델 (fa_*.zip 등 — 개인 학습 산출물, 공유 금지)
 runs/
 logs/
 results/
