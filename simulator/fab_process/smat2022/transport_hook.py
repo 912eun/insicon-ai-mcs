@@ -73,6 +73,19 @@ class AMRTransportHook(IPlugin):
         if from_port is None or to_port is None or from_port == to_port:
             return
 
-        # lot.priority: SMT2020에서 Hot Lot은 priority > 0
-        priority = "HOT" if getattr(lot, "priority", 0) > 0 else "NORMAL"
-        self.fab_sim.add_request(from_port, to_port, priority)
+        # lot.priority = 데이터셋 PRIOR tier. SMT2020_LVHM 분포: 10=98%, 20=1.8%, 30=0.1%.
+        # PRIOR>0(이전 기준)은 모든 lot이 10 이상이라 100% HOT으로 붕괴됨 → 우선순위 신호 소멸.
+        # PRIOR>10(즉 20·30 tier)을 HOT으로 정의 → ~2% HOT, 실제 fab 핫랏 비율과 일치.
+        priority = "HOT" if getattr(lot, "priority", 0) > 10 else "NORMAL"
+
+        if getattr(instance, "external_transport", False):
+            # closed-loop: 배송 완료 시 이 lot을 다음 장비에 release하도록 콜백 연결.
+            # 요청이 실제 생성된 경우에만 lot을 hold(_awaiting_transport=True).
+            req = self.fab_sim.add_request(
+                from_port, to_port, priority,
+                on_complete=lambda r, _inst=instance, _lot=lot: _inst.free_up_lots_after_transport(_lot),
+            )
+            if req is not None:
+                lot._awaiting_transport = True
+        else:
+            self.fab_sim.add_request(from_port, to_port, priority)
