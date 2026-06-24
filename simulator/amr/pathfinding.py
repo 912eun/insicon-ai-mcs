@@ -140,6 +140,8 @@ def astar_with_reservation(
     reservation,
     max_time: int = 500,
     time_offset: int = 0,
+    density: Optional[np.ndarray] = None,
+    w_cong: float = 0.0,
 ) -> Optional[list]:
     """
     Time-extended A* that avoids vertex/edge conflicts in the reservation table.
@@ -200,6 +202,9 @@ def astar_with_reservation(
             if reservation.is_edge_conflict(cx, cy, nx, ny, abs_t):
                 continue
             new_g = g_cost[current] + cost
+            # 혼잡가중: 주변 AMR 밀도 높은 셀에 추가비용 → 막힌 구역째 우회 (Jang 동적가중 류)
+            if density is not None and w_cong > 0.0:
+                new_g += w_cong * float(density[ny, nx])
             nb_state = (nx, ny, nt)
             if new_g < g_cost.get(nb_state, float("inf")):
                 g_cost[nb_state] = new_g

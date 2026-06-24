@@ -301,6 +301,8 @@ class FABSimulator:
         battery_enabled: bool = False,
         charge_policy: str = "threshold",   # threshold | opportunity | highlow (휴리스틱 baseline)
         battery_scale: float = 1.0,         # drain·charge 가속 배수 = 유효용량 1/scale (용량 sweep 축/dev 단축키)
+        routing: str = "reservation",       # reservation(예약A*) | congestion(혼잡가중A*) — 라우팅 헤드룸 측정용
+        w_cong_route: float = 2.0,          # 혼잡가중 셀 패널티 (routing=congestion일 때)
     ):
         random.seed(seed)
         self.grid_map         = grid_map
@@ -351,6 +353,10 @@ class FABSimulator:
         self.battery_enabled  = battery_enabled
         self.charge_policy    = charge_policy
         self.battery_scale    = battery_scale
+        self.routing          = routing
+        self.w_cong_route     = w_cong_route
+        self._density_cache   = None
+        self._density_step    = -1
         # step당 SoC 환산 (Bischoff Ah/h → 1 step=STEP_SEC초) × battery_scale(유효용량 1/scale)
         self._drain_loaded = DRAIN_LOADED_AH_H * STEP_SEC / 3600 / BATTERY_CAP_AH * battery_scale
         self._drain_unload = DRAIN_UNLOAD_AH_H * STEP_SEC / 3600 / BATTERY_CAP_AH * battery_scale
@@ -517,6 +523,32 @@ class FABSimulator:
     def get_next_request(self) -> Optional[_Request]:
         return self.request_queue[0][2] if self.request_queue else None
 
+    # ── 라우팅 (예약A* | 혼잡가중A*) ───────────────────────
+    def _density_grid(self) -> np.ndarray:
+        """현재 AMR 점유 밀도(5x5 box 스미어). step당 1회만 계산(캐시)."""
+        if self._density_step == self.current_step and self._density_cache is not None:
+            return self._density_cache
+        d = np.zeros((self._grid_h, self._grid_w), dtype=np.float32)
+        for a in self.amrs:
+            if a.status != AMRStatus.DEPLETED:
+                d[a.y, a.x] += 1.0
+        blur = d.copy()
+        for sy in range(-2, 3):
+            for sx in range(-2, 3):
+                if sx or sy:
+                    blur += np.roll(np.roll(d, sy, axis=0), sx, axis=1)
+        self._density_cache = blur
+        self._density_step  = self.current_step
+        return blur
+
+    def _find_path(self, start, goal, t):
+        """routing 모드에 따라 예약A* 또는 혼잡가중A*."""
+        density = self._density_grid() if self.routing == "congestion" else None
+        return astar_with_reservation(
+            self.grid_map, start, goal, self.reservation, time_offset=t,
+            density=density, w_cong=self.w_cong_route,
+        )
+
     def dispatch(self, amr_id: int, request_id: Optional[int] = None) -> bool:
         amr = next((a for a in self.amrs if a.id == amr_id), None)
         if amr is None or not amr.is_idle:
@@ -548,19 +580,13 @@ class FABSimulator:
         goal   = (to_p["grid_x"],   to_p["grid_y"])
 
         t0 = self.current_step
-        path_to_pickup = astar_with_reservation(
-            self.grid_map, amr.position, pickup,
-            self.reservation, time_offset=t0,
-        )
+        path_to_pickup = self._find_path(amr.position, pickup, t0)
         if path_to_pickup is None:
             heapq.heappush(self.request_queue, (req.priority.value, req.id, req))
             return False
 
         t1 = t0 + len(path_to_pickup) - 1
-        path_to_goal = astar_with_reservation(
-            self.grid_map, pickup, goal,
-            self.reservation, time_offset=t1,
-        )
+        path_to_goal = self._find_path(pickup, goal, t1)
         if path_to_goal is None:
             heapq.heappush(self.request_queue, (req.priority.value, req.id, req))
             return False
@@ -745,10 +771,7 @@ class FABSimulator:
             return
 
         goal     = (goal_info["grid_x"], goal_info["grid_y"])
-        new_path = astar_with_reservation(
-            self.grid_map, amr.position, goal,
-            self.reservation, time_offset=self.current_step,
-        )
+        new_path = self._find_path(amr.position, goal, self.current_step)
         if new_path is None:
             self._abort_amr(amr)
         else:
@@ -791,10 +814,7 @@ class FABSimulator:
         free.sort(key=lambda i: abs(self.chargers[i][0] - amr.x)
                               + abs(self.chargers[i][1] - amr.y))
         for i in free:
-            path = astar_with_reservation(
-                self.grid_map, amr.position, self.chargers[i],
-                self.reservation, time_offset=self.current_step,
-            )
+            path = self._find_path(amr.position, self.chargers[i], self.current_step)
             if path is None:
                 continue
             self.reservation.reserve(path, amr.id, time_offset=self.current_step)
