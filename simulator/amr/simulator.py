@@ -332,6 +332,7 @@ class FABSimulator:
         self.total_queue_time  = 0   # 큐 대기 시간 합계
         self.total_travel_time = 0   # 이동 시간 합계
         self.deadlock_count   = 0
+        self.blocking_count   = 0   # 충돌 롤백 누적 = blocking_time (deadlock 전단계 연속 신호)
         self.replan_count     = 0   # 조기 재경로 발동 횟수 (진단용)
         self.abort_count      = 0   # 재경로 실패 → 요청 반환 횟수 (진단용)
         # 조기 재경로(A안) 토글. False면 기존 동작(30스텝 교착에서만 replan).
@@ -373,6 +374,7 @@ class FABSimulator:
         self.total_queue_time  = 0
         self.total_travel_time = 0
         self.deadlock_count    = 0
+        self.blocking_count    = 0
         self.replan_count      = 0
         self.abort_count       = 0
         self.total_busy_steps  = 0
@@ -641,10 +643,13 @@ class FABSimulator:
         # 배터리: 휴리스틱 충전 트리거 (dispatch보다 먼저 → 충전행 차량은 배정 제외)
         if self.battery_enabled:
             self._charging_decisions()
+            # unavailable = 충전/방전/충전이동 + 저SoC로 묶인 idle(충전 못 잡고 dispatch도 거부)
+            # → "available인데 실은 일 못 하는" 거짓 가용 제거 (effective availability)
             self.total_unavail_steps += sum(
                 1 for a in self.amrs
                 if a.status in (AMRStatus.CHARGING, AMRStatus.DEPLETED)
                 or a.going_to_charge
+                or (a.is_idle and a.soc < SOC_LOW)
             )
 
         if self.auto_dispatch:
@@ -688,6 +693,8 @@ class FABSimulator:
                     self._rollback(amr)
 
     def _rollback(self, amr: AMR):
+        # 충돌로 뒤로 밀린 step = 다른 AMR에 막힌 시간 (blocking, Chung&Jang DPB 핵심 지표)
+        self.blocking_count += 1
         if amr.path_idx > 0:
             amr.path_idx -= 1
         amr.x = amr.path[amr.path_idx][0]
@@ -884,6 +891,8 @@ class FABSimulator:
             # ── transport-layer 1차 지표 (A1) ──
             # ① 강건성: 1k 스텝당 데드락 (에피소드 길이 무관 비교용)
             "deadlock_per_1k": round(self.deadlock_count / step * 1000, 3),
+            # blocking = 충돌로 막혀 대기한 누적(연속, deadlock보다 민감) — Chung&Jang DPB 핵심
+            "blocking_per_1k": round(self.blocking_count / step * 1000, 3),
             "replans":      self.replan_count,
             "aborts":       self.abort_count,
             # ② fleet 효율: 누적 이동 셀 수 + 완료당 이동거리(에너지 프록시)
