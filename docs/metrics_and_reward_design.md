@@ -10,8 +10,8 @@
 | 층위 | 무엇 | 역할 | 가중치 | 상태 |
 |---|---|---|---|---|
 | **① KPI 지표** | 측정값 | 어휘(무엇을 잰다) | 없음 | ✅ 확정 |
-| **② 결합 스코어** | judge | "누가 이겼나" 단일 점수 | `W_*` | ⚠ **미정의 (팀 게이트)** |
-| **③ PPO reward** | train | PPO가 최적화하는 신호 | `W_*` | 초안값만 |
+| **② 결합 스코어** | judge | "누가 이겼나" 단일 점수 | `W_*` | ✅ **구현됨**(`eval_baseline.transport_score`, 공유) — 숫자만 튜닝 |
+| **③ PPO reward** | train | PPO가 최적화하는 신호 | `W_*` | 초안값(charging_env) |
 
 ```
 ①KPI(어휘) ──합쳐서──> ②judge(목적·팀합의) ──맞춰서──> ③reward(PPO 학습)
@@ -52,19 +52,22 @@ depleted_per_1k = depleted / step × 1000            # 방전(실패)
 
 ---
 
-## 2. 결합 스코어 (② judge — **팀 합의 게이트, 미정의**)
+## 2. 결합 스코어 (② judge — **구현됨: `eval_baseline.transport_score`, 공유**)
 
-여러 KPI를 **하나의 점수**로 합쳐 "RL vs 휴리스틱 누가 이겼나" 판정. 제안 형태:
+여러 KPI를 **하나의 점수**로 합쳐 "RL vs 휴리스틱 누가 이겼나" 판정. **구현된 형태 (배달 1건당 비용, 0=최고):**
 ```
-transport_score = − W_DL     · deadlock_per_1k
-                  − W_BLOCK   · blocking_per_1k
-                  − W_TRAV    · dist_per_done
-                  − W_DEPLETE · depleted_per_1k
-                  − W_ENERGY  · energy_per_delivery
-  ( HOT SLA ≥ 목표, throughput은 제약/베이스라인 )
+cost = W_DL·(deadlocks/n) + W_BLOCK·(blocking/n) + W_DEPLETE·(depleted/n)
+     + W_TRAV·dist_per_done + W_ENERGY·energy_per_delivery
+     + W_SLA·max(0, HOT_SLA_MIN − hot_sla_rate)     # HOT SLA 소프트 게이트(제약)
+score = −cost     (n=throughput, 분모라 자동 보상)
+W_*: DL=5000 BLOCK=10 TRAV=1 DEPLETE=3000 ENERGY=26 SLA=200 / HOT_SLA_MIN=0.9
 ```
+- **단위 통일**: 전부 "배달당 손실 step". robustness=raw/throughput, efficiency=이미 배달당.
+- **공유 1곳**: eval_baseline·prediction/baseline 모두 import (중복 없음). prediction은 FIFO=1.0 비율로 표현.
+- **배터리 포함** → 충전 RL도 같은 judge로 평가(off면 energy/deplete=0).
+- **남은 합의 = W_* *숫자*만** (구조·단위 확정). 팀이 실험 돌리며 한 함수에서 튜닝.
 
-**각 `W_`의 정체 = 교환비** ("metric X 한 단위 = Y 몇 단위만큼 나쁜가"). 이건 **가치 판단 = 목적의 정의**라 PPO로 못 정함(순환). 사람이 정하되 *원칙적으로*:
+**각 `W_`의 정체 = 교환비** ("metric X 한 단위 = Y 몇 단위만큼 나쁜가"). 이건 **가치 판단 = 목적의 정의**라 PPO로 못 정함(순환). 실비용 grounding으로 정함(아래):
 
 | 방법 | 내용 | 장점 |
 |---|---|---|

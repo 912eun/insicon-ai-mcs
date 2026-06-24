@@ -44,7 +44,7 @@ W_BLOCK   = 10.0     # blocking 1건 = ~10 step 대기지연
 W_TRAV    = 1.0      # 이동 1셀 = 1 step (dist_per_done에 직접)
 W_DEPLETE = 3000.0   # 방전 1건 = 견인회수 다운타임 step
 W_ENERGY  = 26.0     # 1 Ah 충전 = 충전소 대기 step (30분/52Ah)
-W_SLA     = 1000.0   # HOT SLA 미달분(1.0 기준)당 비용 — 제약을 소프트 게이트로
+W_SLA     = 200.0    # HOT SLA 미달분당 비용 — 소프트 제약(효율 항과 동급 스케일, 안 묻히게). 팀 튜닝 대상
 HOT_SLA_MIN = 0.90   # HOT SLA 충족 목표 (이 아래면 페널티)
 
 

@@ -123,15 +123,32 @@ reward_common =
 
 ---
 
-## 권장 순서 (마일스톤)
+## 권장 순서 (마일스톤) — **갱신 2026-06-24 (측정 기반 피벗 반영)**
 
-1. **M1**: A1 + B1 — transport KPI 노출 + eval 지표 교체. (전략·배터리 무관, 한 번에 모두 공유)
-2. **M2**: B2a — **공통 reward 레이어 팀 합의·구현** + 각 전략이 B2b로 마이그레이션.
-   기존 sweep에서 각 전략 vs 휴리스틱 transport 목적 재측정.
-3. **M3**: B4 — fleet-size sweep으로 전략별 우위 지점 확정.
-4. **M4**: 배터리 설계 합의 → A2 + 공통 레이어에 방전 항 — 배터리 있는 판에서 재비교.
-5. **M5**: A3 + B3 — 충전을 RL action으로 승격(2단계).
+> ⚠ **큰 변경:** 측정으로 **디스패칭-RL 기각**([[dispatch-rl-rejected-battery-confirmed]] / jang_papers_review §5):
+> 모든 레짐서 RL이 nearest를 못 이김(HOT SLA 0 이득). **라우팅-RL도 헤드룸 작음**(예약A*가 이미 혼잡인지).
+> → **RL의 자리를 *충전* 하나로 확정**(비-myopic, Bischoff +17% 헤드룸, fleet−15% 실무효용).
+> **phase4/5(대수별 scratch 학습) = 형태 유지, 방식만 디스패칭→충전.**
 
-> M1~M3은 배터리와 독립이라 **지금 바로 착수 가능**. 배터리(M4~)는 설계 합의가 선행.
-> **M2의 B2a(공통 레이어 합의)가 멀티전략의 핵심 동기화 지점** — 여기서 W_* 상수와 KPI 키를
-> 팀 전체가 고정해야 이후 전략 비교(M3)가 성립한다.
+```
+dispatch=nearest(휴리스틱)  routing=예약A*(필요시 혼잡가중)  deadlock=구조적  charging=RL ★
+```
+
+1. **M1 ✅ 완료**: transport KPI(deadlock/blocking/dist/hot_sla…) 노출 + eval 지표 + **단일 Judge**
+   (`transport_score`, 배달당 비용·배터리 포함·HOT SLA 게이트, eval_baseline·prediction 공유).
+2. **M2 ✅ 대부분**: dispatch-RL·routing-RL 헤드룸 *측정→기각*. 휴리스틱 baseline 3종(FIFO/EDD/Random) +
+   배터리 시뮬(A2 phase-1: SoC·충전소·휴리스틱 충전) 구축. **남은 합의 = Judge W_* 숫자**(구조·단위 확정).
+3. **M3 — 충전 RL 학습 (phase4/5 형태 유지·방식 변경)**: `ChargingFabEnv`(event-triggered,
+   {서빙/충전} 액션, Light reward) 를 **대수별 scratch + coupled + multi-seed**로 학습 → 휴리스틱 충전
+   (threshold/opportunity/highlow) frontier를 *지배*하는지 단일 Judge로 판정.
+4. **M4 — 결판 sweep**: fleet-size {16·20·30·50·76} × `battery_scale`(빡빡-배터리 레짐) ×
+   {충전 RL, 휴리스틱 충전, OHT} → **"같은 서비스를 더 적은 차/에너지로"** = fleet-sizing 주장(조작 없이 real).
+5. **M5 — 확장(선택)**: Action 확장(전략적 유휴), 배터리 health(용량 fade), obs 배터리 feature 강화.
+
+> **착수 가능 = M3(충전 RL 학습)**. 전제(A2 배터리·단일 Judge)는 끝남.
+> **핵심 동기화 지점 = M2의 Judge W_* 숫자 합의** — 팀이 실험 돌리며 튜닝하되 *한 함수*(transport_score)를
+> 공유하므로 한 곳만 고치면 모두 반영(중복 없음).
+
+> **팀 역할 함의(논의 필요):** dispatch 전략(FA/s1~s4)은 이제 **RL 기여가 아니라 *휴리스틱 baseline***이 된다.
+> RL 기여는 *충전*. 팀원별로 (a) 충전 RL 변형(reward shaping·obs·action) 분담 또는 (b) baseline·judge·sweep·
+> 예측 등 역할 재배치를 다음 회의에서 확정. (현재: gaeun=baseline, taehee=judge, 영은=충전RL/시뮬.)
