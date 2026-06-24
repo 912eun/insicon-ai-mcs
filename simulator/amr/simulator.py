@@ -912,6 +912,7 @@ class FABSimulator:
             # ① 강건성: 1k 스텝당 데드락 (에피소드 길이 무관 비교용)
             "deadlock_per_1k": round(self.deadlock_count / step * 1000, 3),
             # blocking = 충돌로 막혀 대기한 누적(연속, deadlock보다 민감) — Chung&Jang DPB 핵심
+            "blocking":        self.blocking_count,   # raw (결합 스코어 per-delivery 환산용)
             "blocking_per_1k": round(self.blocking_count / step * 1000, 3),
             "replans":      self.replan_count,
             "aborts":       self.abort_count,

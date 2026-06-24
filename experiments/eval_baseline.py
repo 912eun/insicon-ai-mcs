@@ -19,6 +19,7 @@ deadlock·replan·abort는 에피소드 길이에 비례하므로 1000스텝당 
 
 import sys
 import argparse
+import importlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -35,21 +36,54 @@ from simulator.amr.simulator import HOT_SLA_STEPS
 DATASET_DIR = str(Path(__file__).parents[1] / "external" / "PySCFabSim" / "datasets" / "SMT2020_LVHM")
 RAIL_GRID   = Path(__file__).parents[1] / "rware_simulator" / "output" / "rail_grid.npy"
 
+# ── ② 결합 스코어(Judge) — 실비용 grounding, 단위=배달 1건당 손실 step ──
+# 각 W는 '사건/단위당 step 손실'. robustness는 raw count/배달, efficiency는 이미 배달당 →
+# 모든 항이 "배달당 step 비용"으로 코헤런트(단위 통일). throughput은 분모라 자동 보상(베이스라인).
+W_DL      = 5000.0   # 데드락 1건 = 영구마비 step 손실
+W_BLOCK   = 10.0     # blocking 1건 = ~10 step 대기지연
+W_TRAV    = 1.0      # 이동 1셀 = 1 step (dist_per_done에 직접)
+W_DEPLETE = 3000.0   # 방전 1건 = 견인회수 다운타임 step
+W_ENERGY  = 26.0     # 1 Ah 충전 = 충전소 대기 step (30분/52Ah)
 
-def resolve_strategy(name):
-    """전략 inner env 클래스 해결 — 공유 도구가 로컬 전략에 *하드 의존* 안 하도록.
 
-    base → None (공유 FabAMREnv, 누구나 사용 가능)
-    fa   → 로컬 전용 FlowAwareFabEnv (없으면 명확히 안내). 팀원 환경엔 fa 없음.
+def transport_score(kpi: dict):
+    """배달당 비용(step 등가) 단일 점수. 반환 (score, breakdown). 0에 가까울수록 우수.
+
+    팀원 초안의 단위 혼용(robustness=per-1k, efficiency=per-delivery) 수정 — raw count/throughput로
+    per-delivery 통일해 travel·energy가 deadlock에 묻히지 않게.
+    HOT SLA·throughput은 스코어 제외(제약/베이스라인).
     """
-    if name == "fa":
-        try:
-            from mcs.dispatcher.strategies.fa import FlowAwareFabEnv
-            return FlowAwareFabEnv
-        except ImportError:
-            raise SystemExit("❌ --strategy fa: FA 전략 코드는 로컬 전용이라 없음. "
-                             "기본 env로 평가하려면 옵션 생략(=base).")
-    return None
+    n = max(kpi.get("throughput", 0), 1)
+    bd = {
+        "deadlock": W_DL      * kpi.get("deadlocks", 0) / n,
+        "blocking": W_BLOCK   * kpi.get("blocking",  0) / n,
+        "deplete":  W_DEPLETE * kpi.get("depleted",  0) / n,
+        "travel":   W_TRAV    * kpi.get("dist_per_done", 0),
+        "energy":   W_ENERGY  * kpi.get("energy_per_delivery", 0),
+    }
+    return -sum(bd.values()), bd
+
+
+def resolve_strategy(spec):
+    """전략 inner env 클래스 해결 — 공유 도구가 *어떤 개인 전략에도* 하드의존 안 하도록 일반화.
+
+    spec:
+        "base" (또는 빈값)        → None (공유 FabAMREnv, 누구나 사용 가능)
+        "module.path:ClassName"   → 동적 import
+                                     (예: mcs.dispatcher.strategies.fa:FlowAwareFabEnv)
+    각 팀원은 자기 전략을 `--strategy 내모듈:내Env` 로 주입 — 코드에 개인 전략 하드코딩 없음.
+    """
+    if not spec or spec == "base":
+        return None
+    if ":" not in spec:
+        raise SystemExit(f"❌ --strategy '{spec}': 'base' 또는 'module.path:ClassName' 형식이어야 함 "
+                         f"(예: mcs.dispatcher.strategies.fa:FlowAwareFabEnv).")
+    mod_path, cls_name = spec.rsplit(":", 1)
+    try:
+        mod = importlib.import_module(mod_path)
+        return getattr(mod, cls_name)
+    except (ImportError, AttributeError) as e:
+        raise SystemExit(f"❌ --strategy '{spec}' 로드 실패: {e}")
 
 
 def make_coupled(n_amrs, max_steps, seed, inner_env_cls=None, early_replan=True,
@@ -163,8 +197,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", help="평가할 MaskablePPO .zip (미지정 시 --heuristic 필요)")
     ap.add_argument("--heuristic", action="store_true", help="휴리스틱 디스패처 (모델 불필요)")
-    ap.add_argument("--strategy", choices=["base", "fa"], default="base",
-                    help="모델 평가용 inner env: base(공유 FabAMREnv) / fa(로컬 전용)")
+    ap.add_argument("--strategy", default="base",
+                    help="모델 inner env: 'base'(공유) 또는 'module.path:ClassName' "
+                         "(예: mcs.dispatcher.strategies.fa:FlowAwareFabEnv)")
     ap.add_argument("--dispatch", choices=["nearest", "cost"], default="nearest",
                     help="휴리스틱 배정: nearest(기하거리) / cost(거리+혼잡, 똑똑한 nearest)")
     ap.add_argument("--n-amrs", type=int, default=20)
@@ -184,13 +219,6 @@ def main():
         print("❌ --model 또는 --heuristic 중 하나 필요"); return
     if args.model and not Path(args.model).exists():
         print(f"❌ 모델 없음: {args.model}"); return
-
-    # ── ② 결합 스코어(Judge)용 가중치 초기 설정 (실비용 기하 기반) ──
-    W_DL      = 5000.0  # 데드락: 영구 마비에 대한 엄청난 시간 손실 페널티
-    W_BLOCK   = 10.0    # 블로킹: 일시 대기 지연(평균 약 10 스텝 지연) 페널티
-    W_TRAV    = 1.0     # 이동거리: 1셀당 1 스텝 시간/이동과 1:1 환산
-    W_DEPLETE = 3000.0  # 방전: 견인 회수 다운타임 기회비용 페널티
-    W_ENERGY  = 26.0    # 에너지: 1 Ah 충전에 걸리는 충전소 대기 스텝 수 (30분/52Ah)
 
     tag = f"휴리스틱({args.dispatch})" if args.heuristic else Path(args.model).name
     grid_tag = "OHT(rail)" if args.oht else "AMR(floor)"
@@ -216,46 +244,29 @@ def main():
         infos.append(info)
         splits.append(split)
 
-        # 에피소드별 단일 결합 스코어 계산
-        ep_score = -(
-            W_DL * info.get('deadlock_per_1k', 0) +
-            W_BLOCK * info.get('blocking_per_1k', 0) +
-            W_TRAV * info.get('dist_per_done', 0) +
-            W_DEPLETE * info.get('depleted_per_1k', 0) +
-            W_ENERGY * info.get('energy_per_delivery', 0)
-        )
+        # 에피소드별 결합 스코어 (배달당 비용, 단위 통일)
+        ep_score, _ = transport_score(info)
         print(f"  ep{ep}: throughput={info['throughput']:>4} "
-              f"deadlocks={info['deadlocks']:>2} blocked={info.get('blocking', 0):>3} "
+              f"deadlocks={info['deadlocks']:>2} blocking={info.get('blocking', 0):>4} "
               f"depleted={info.get('depleted', 0):>2} replans={info.get('replans', 0):>3} "
-              f"score={ep_score:>8.1f}")
+              f"score={ep_score:>8.2f}")
 
     def avg(k): return np.mean([i.get(k, 0) for i in infos])
     per1k = lambda k: avg(k) / args.max_steps * 1000
     def savg(prio, k): return np.mean([s[prio][k] for s in splits])
 
-    # 1차 지표 전체 평균 추출
-    avg_dl_per_1k = avg('deadlock_per_1k')
-    avg_block_per_1k = avg('blocking_per_1k')
-    avg_dist_per_done = avg('dist_per_done')
-    avg_deplete_per_1k = avg('depleted_per_1k')
-    avg_energy_per_delivery = avg('energy_per_delivery')
+    # 최종 결합 스코어(Judge) — 에피소드별 score 평균 + breakdown 평균
+    scores, bds = zip(*[transport_score(i) for i in infos])
+    combined_score = float(np.mean(scores))
+    bd = {k: float(np.mean([b[k] for b in bds])) for k in bds[0]}
 
-    # 최종 가중 결합 스코어(Judge) 계산
-    combined_score = -(
-        W_DL * avg_dl_per_1k +
-        W_BLOCK * avg_block_per_1k +
-        W_TRAV * avg_dist_per_done +
-        W_DEPLETE * avg_deplete_per_1k +
-        W_ENERGY * avg_energy_per_delivery
-    )
-
-    print("\n=== 결합 스코어 (② Judge - 비용 기반 단일 점수) ===")
-    print(f"Combined Score: {combined_score:.2f} (0에 가까울수록 우수)")
-    print(f"  └ Deadlock 페널티   (-{W_DL:>6} * {avg_dl_per_1k:.3f}): {-W_DL*avg_dl_per_1k:>8.2f}")
-    print(f"  └ Blocking 페널티   (-{W_BLOCK:>6} * {avg_block_per_1k:.3f}): {-W_BLOCK*avg_block_per_1k:>8.2f} (시뮬레이터 지원 시)")
-    print(f"  └ Travel 거리 비용   (-{W_TRAV:>6} * {avg_dist_per_done:.1f}): {-W_TRAV*avg_dist_per_done:>8.2f}")
-    print(f"  └ Deplete 방전 페널티 (-{W_DEPLETE:>6} * {avg_deplete_per_1k:.3f}): {-W_DEPLETE*avg_deplete_per_1k:>8.2f}")
-    print(f"  └ Energy 소모 비용   (-{W_ENERGY:>6} * {avg_energy_per_delivery:.4f}): {-W_ENERGY*avg_energy_per_delivery:>8.2f}")
+    print("\n=== 결합 스코어 (② Judge - 배달당 비용, 0에 가까울수록 우수) ===")
+    print(f"Combined Score: {combined_score:.2f}  (배달 1건당 손실 step 등가)")
+    print(f"  └ Deadlock : {-bd['deadlock']:>8.2f}")
+    print(f"  └ Blocking : {-bd['blocking']:>8.2f}")
+    print(f"  └ Travel   : {-bd['travel']:>8.2f}")
+    print(f"  └ Deplete  : {-bd['deplete']:>8.2f}")
+    print(f"  └ Energy   : {-bd['energy']:>8.2f}")
 
     # transport-layer 1차 지표 (problem-reframe: fab 처리량 아님, AMR 운영 효율).
     # deadlock_per_1k 등 정규화 값은 get_kpi()가 실제 스텝수 기준으로 계산(에피소드 조기종료 무관).
