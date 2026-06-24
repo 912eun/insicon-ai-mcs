@@ -44,22 +44,28 @@ W_BLOCK   = 10.0     # blocking 1건 = ~10 step 대기지연
 W_TRAV    = 1.0      # 이동 1셀 = 1 step (dist_per_done에 직접)
 W_DEPLETE = 3000.0   # 방전 1건 = 견인회수 다운타임 step
 W_ENERGY  = 26.0     # 1 Ah 충전 = 충전소 대기 step (30분/52Ah)
+W_SLA     = 1000.0   # HOT SLA 미달분(1.0 기준)당 비용 — 제약을 소프트 게이트로
+HOT_SLA_MIN = 0.90   # HOT SLA 충족 목표 (이 아래면 페널티)
 
 
 def transport_score(kpi: dict):
-    """배달당 비용(step 등가) 단일 점수. 반환 (score, breakdown). 0에 가까울수록 우수.
+    """transport-layer 통합 Judge — 배달당 비용(step 등가). 반환 (score, breakdown). 0=최고.
 
-    팀원 초안의 단위 혼용(robustness=per-1k, efficiency=per-delivery) 수정 — raw count/throughput로
-    per-delivery 통일해 travel·energy가 deadlock에 묻히지 않게.
-    HOT SLA·throughput은 스코어 제외(제약/베이스라인).
+    단위: 모든 항을 '배달 1건당 손실 step'으로 통일(robustness=raw/throughput, efficiency=배달당).
+    HOT SLA는 제약 → 미달분만 소프트 게이트 페널티. throughput은 분모라 자동 보상(베이스라인).
+    배터리 off면 energy/deplete=0이라 그대로 동작. (eval_baseline·prediction/baseline 공유)
     """
-    n = max(kpi.get("throughput", 0), 1)
+    g = lambda k: kpi.get(k) or 0          # None/결측 → 0 (배터리 off 등)
+    n = max(g("throughput"), 1)
+    hot_sla = kpi.get("hot_sla_rate")
+    hot_sla = 1.0 if hot_sla is None else hot_sla
     bd = {
-        "deadlock": W_DL      * kpi.get("deadlocks", 0) / n,
-        "blocking": W_BLOCK   * kpi.get("blocking",  0) / n,
-        "deplete":  W_DEPLETE * kpi.get("depleted",  0) / n,
-        "travel":   W_TRAV    * kpi.get("dist_per_done", 0),
-        "energy":   W_ENERGY  * kpi.get("energy_per_delivery", 0),
+        "deadlock": W_DL      * g("deadlocks") / n,
+        "blocking": W_BLOCK   * g("blocking")  / n,
+        "deplete":  W_DEPLETE * g("depleted")  / n,
+        "travel":   W_TRAV    * g("dist_per_done"),
+        "energy":   W_ENERGY  * g("energy_per_delivery"),
+        "hot_sla":  W_SLA     * max(0.0, HOT_SLA_MIN - hot_sla),
     }
     return -sum(bd.values()), bd
 
@@ -267,6 +273,7 @@ def main():
     print(f"  └ Travel   : {-bd['travel']:>8.2f}")
     print(f"  └ Deplete  : {-bd['deplete']:>8.2f}")
     print(f"  └ Energy   : {-bd['energy']:>8.2f}")
+    print(f"  └ HOT SLA  : {-bd['hot_sla']:>8.2f}  (충족률 {avg('hot_sla_rate')*100:.1f}%, 목표 {HOT_SLA_MIN*100:.0f}%)")
 
     # transport-layer 1차 지표 (problem-reframe: fab 처리량 아님, AMR 운영 효율).
     # deadlock_per_1k 등 정규화 값은 get_kpi()가 실제 스텝수 기준으로 계산(에피소드 조기종료 무관).
