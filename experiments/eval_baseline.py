@@ -271,13 +271,13 @@ def main():
     # transport-layer 1차 지표 (problem-reframe: fab 처리량 아님, AMR 운영 효율).
     # deadlock_per_1k 등 정규화 값은 get_kpi()가 실제 스텝수 기준으로 계산(에피소드 조기종료 무관).
     print("\n=== transport-layer 1차 지표 (평균) ===")
-    print(f"① 강건성   deadlock/1k:   {avg_dl_per_1k:.3f}   "
+    print(f"① 강건성   deadlock/1k:   {avg('deadlock_per_1k'):.3f}   "
           f"(데드락 {avg('deadlocks'):.1f}건)")
-    print(f"           blocking/1k:   {avg_block_per_1k:.3f}   "
+    print(f"           blocking/1k:   {avg('blocking_per_1k'):.3f}   "
           f"(대기 blocking {avg('blocking'):.1f}건)")
     print(f"           혼잡 replans:   {avg('replans'):.1f}  aborts: {avg('aborts'):.1f}  "
           f"(합 {avg('replans')+avg('aborts'):.1f})")
-    print(f"② fleet효율 이동거리/완료: {avg_dist_per_done:.1f} 셀   "
+    print(f"② fleet효율 이동거리/완료: {avg('dist_per_done'):.1f} 셀   "
           f"(누적 {avg('total_travel_dist'):.0f} 셀, 에너지 프록시)")
     print(f"           utilization:    {avg('utilization'):.1f}%")
     print(f"③ HOT SLA  충족률(≤{HOT_SLA_STEPS}step): {avg('hot_sla_rate')*100:.1f}%")
