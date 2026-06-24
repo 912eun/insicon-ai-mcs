@@ -31,6 +31,17 @@ DEFAULT_LOAD_STEPS   = 8
 DEFAULT_UNLOAD_STEPS = 8
 DEADLOCK_THRESHOLD   = 30   # 이만큼 제자리 = "진짜 교착" (KPI 카운트)
 REPLAN_STUCK         = 5    # 이만큼 막히면 낡은 예약 풀고 조기 재경로 (cascade 차단)
+HOT_SLA_STEPS        = 30   # HOT 요청 큐 대기 ≤ 이 스텝이면 SLA 충족 (transport-layer 제약)
+
+# ── 배터리/충전 (A2 phase-1, 기본 off) — Bischoff 2505.11136 포팅, docs/battery §2.5 ──
+STEP_SEC            = CELL_MM / V_MAX_MMS   # 1 step의 실시간(초) ≈ 1.33s
+BATTERY_CAP_AH     = 52.0                   # 용량 (Ah)
+DRAIN_LOADED_AH_H  = 15.0                   # 적재 이동 소모 (Ah/h)
+DRAIN_UNLOAD_AH_H  = 10.0                   # 공차 이동 소모 (Ah/h)
+CHARGE_AH_H        = 104.0                  # 충전 (Ah/h = 52Ah/0.5h, 30분 만충)
+SOC_LOW            = 0.20                   # 강제충전 하한 / threshold 트리거 / dispatch 제외선
+N_CHARGERS         = 3                      # 충전소 개수 (구역 균형)
+CHARGER_SLOTS      = 1                      # 충전소당 동시충전 슬롯 (제한 → contention=헤드룸)
 
 
 class AMRStatus(Enum):
@@ -39,6 +50,8 @@ class AMRStatus(Enum):
     LOADING   = "loading"    # 픽업 포트 도착, 화물 적재 중
     UNLOADING = "unloading"  # 드롭오프 포트 도착, 화물 하역 중
     DONE      = "done"
+    CHARGING  = "charging"   # 충전소 도착, 충전 중 (배터리 on)
+    DEPLETED  = "depleted"   # SoC 0 방전 = 그 자리 immobilized (deadlock급 실패)
 
 
 class Priority(Enum):
@@ -122,6 +135,16 @@ class AMR:
         self._step_costs: list = []   # 세그먼트별 스텝 비용 (float)
         self._step_frac:  float = 0.0 # 현재 세그먼트 누적 스텝
 
+        # ── 배터리 (battery_enabled=True일 때만 활성) ──
+        self.battery_enabled = False
+        self.soc           = 1.0      # State of Charge (0~1)
+        self.drain_loaded  = 0.0      # 적재 이동 step당 SoC 감소
+        self.drain_unload  = 0.0      # 공차 이동 step당 SoC 감소
+        self.charge_rate   = 0.0      # 충전 step당 SoC 증가
+        self.going_to_charge = False  # 충전소로 이동 중 (도착 시 CHARGING)
+        self._charger_idx  = -1       # 점유 중인 충전소 인덱스 (슬롯 반납용)
+        self._depletion_counted = False
+
     @property
     def position(self) -> tuple:
         return (self.x, self.y)
@@ -141,6 +164,10 @@ class AMR:
         self._step_frac  = 0.0
 
     def step(self):
+        # 충전/방전은 sim 레벨에서 처리 (슬롯 관리) → AMR.step()은 무동작
+        if self.status in (AMRStatus.CHARGING, AMRStatus.DEPLETED):
+            return
+
         if self.status == AMRStatus.LOADING:
             self._action_steps -= 1
             if self._action_steps <= 0:
@@ -153,6 +180,15 @@ class AMR:
                 self.status = AMRStatus.DONE
 
         elif self.status == AMRStatus.MOVING:
+            # 배터리: 이동(MOVING) 스텝마다 SoC 소모. 적재 여부로 소모율 구분.
+            if self.battery_enabled:
+                carrying = (self.request is not None and self.pickup_idx >= 0
+                            and self.path_idx >= self.pickup_idx)
+                self.soc -= self.drain_loaded if carrying else self.drain_unload
+                if self.soc <= 0.0:
+                    self.soc = 0.0
+                    self.status = AMRStatus.DEPLETED   # 그 자리 방전 = 실패
+                    return
             self._step_frac += 1.0
             # 누적 스텝이 현재 세그먼트 비용을 넘으면 다음 셀로 이동
             while self.path_idx < len(self.path) - 1:
@@ -169,9 +205,14 @@ class AMR:
                     self._step_frac    = 0.0
                     return
             if self.path_idx == len(self.path) - 1 and self.status == AMRStatus.MOVING:
-                self.status        = AMRStatus.UNLOADING
-                self._action_steps = self._unload_steps
-                self._step_frac    = 0.0
+                if self.going_to_charge:
+                    # 충전소 도착 → 충전 시작 (sim이 soc 회복·슬롯 관리)
+                    self.status     = AMRStatus.CHARGING
+                    self._step_frac = 0.0
+                else:
+                    self.status        = AMRStatus.UNLOADING
+                    self._action_steps = self._unload_steps
+                    self._step_frac    = 0.0
 
     def reset_idle(self):
         self.status        = AMRStatus.IDLE
@@ -184,6 +225,7 @@ class AMR:
         self._prev_pos     = (self.x, self.y)
         self._step_costs   = []
         self._step_frac    = 0.0
+        self.going_to_charge = False   # soc는 유지 (배터리 상태는 idle 복귀로 안 리셋)
 
 
 class ReservationTable:
@@ -256,6 +298,9 @@ class FABSimulator:
         v_max_mms: float = V_MAX_MMS,
         acc_mms2: float = ACC_MMS2,
         dec_mms2: float = DEC_MMS2,
+        battery_enabled: bool = False,
+        charge_policy: str = "threshold",   # threshold | opportunity | highlow (휴리스틱 baseline)
+        battery_scale: float = 1.0,         # drain·charge 가속 배수 = 유효용량 1/scale (용량 sweep 축/dev 단축키)
     ):
         random.seed(seed)
         self.grid_map         = grid_map
@@ -293,7 +338,27 @@ class FABSimulator:
         # ablation / 수정 전·후 비교용.
         self.early_replan     = True
         self.total_busy_steps  = 0   # 에피소드 전체 non-idle AMR 누적 (평균 utilization용)
+        self.total_travel_dist = 0   # 누적 이동 셀 수 (fleet 효율/에너지 프록시)
+        # per-priority 분리 집계 (transport-layer: HOT은 SLA 제약, NORMAL은 효율)
+        self.completed_by_pri  = {Priority.HOT: 0, Priority.NORMAL: 0}
+        self.queue_time_by_pri = {Priority.HOT: 0, Priority.NORMAL: 0}
+        self.travel_time_by_pri = {Priority.HOT: 0, Priority.NORMAL: 0}
+        self.hot_sla_met       = 0   # HOT 중 queue_time ≤ HOT_SLA_STEPS 건수
         self.reservation      = ReservationTable()
+
+        # ── 배터리/충전 (A2 phase-1) ──
+        self.battery_enabled  = battery_enabled
+        self.charge_policy    = charge_policy
+        self.battery_scale    = battery_scale
+        # step당 SoC 환산 (Bischoff Ah/h → 1 step=STEP_SEC초) × battery_scale(유효용량 1/scale)
+        self._drain_loaded = DRAIN_LOADED_AH_H * STEP_SEC / 3600 / BATTERY_CAP_AH * battery_scale
+        self._drain_unload = DRAIN_UNLOAD_AH_H * STEP_SEC / 3600 / BATTERY_CAP_AH * battery_scale
+        self._charge_rate  = CHARGE_AH_H       * STEP_SEC / 3600 / BATTERY_CAP_AH * battery_scale
+        self.chargers: list = []                # 충전소 셀 좌표
+        self.charger_occ: dict = {}             # 충전소 idx → 점유 amr_id set (슬롯 제한)
+        self.depleted_count    = 0
+        self.total_unavail_steps = 0            # 충전/방전으로 못 쓴 AMR·step 누적 (availability)
+        self.total_drain_frac    = 0.0          # 누적 소모 SoC (energy 프록시)
 
         self.amrs: list[AMR]          = []
         self.request_queue: list      = []
@@ -311,6 +376,14 @@ class FABSimulator:
         self.replan_count      = 0
         self.abort_count       = 0
         self.total_busy_steps  = 0
+        self.total_travel_dist = 0
+        self.completed_by_pri  = {Priority.HOT: 0, Priority.NORMAL: 0}
+        self.queue_time_by_pri = {Priority.HOT: 0, Priority.NORMAL: 0}
+        self.travel_time_by_pri = {Priority.HOT: 0, Priority.NORMAL: 0}
+        self.hot_sla_met       = 0
+        self.depleted_count    = 0
+        self.total_unavail_steps = 0
+        self.total_drain_frac    = 0.0
         self.reservation.clear()
         _Request._counter = 0
 
@@ -325,6 +398,14 @@ class FABSimulator:
             )
             for i in range(self.n_amrs)
         ]
+        if self.battery_enabled:
+            for a in self.amrs:
+                a.battery_enabled = True
+                a.soc          = 1.0
+                a.drain_loaded = self._drain_loaded
+                a.drain_unload = self._drain_unload
+                a.charge_rate  = self._charge_rate
+            self._build_chargers()
         self.request_queue      = []
         self.completed_requests = []
 
@@ -332,6 +413,21 @@ class FABSimulator:
             self._generate_request()
 
         return self.get_state()
+
+    def _build_chargers(self):
+        """충전소 N_CHARGERS개를 구역 균형 앵커에 가장 가까운 walkable 포트셀로 배치."""
+        W, H = self._grid_w, self._grid_h
+        anchors = [(W * 0.25, H * 0.30), (W * 0.75, H * 0.30), (W * 0.50, H * 0.75)]
+        anchors = anchors[:N_CHARGERS]
+        cells = []
+        for ax, ay in anchors:
+            best = min(self.port_names,
+                       key=lambda p: (self.port_locations[p]["grid_x"] - ax) ** 2
+                                   + (self.port_locations[p]["grid_y"] - ay) ** 2)
+            info = self.port_locations[best]
+            cells.append((info["grid_x"], info["grid_y"]))
+        self.chargers = cells
+        self.charger_occ = {i: set() for i in range(len(cells))}
 
     # ── 요청 생성 / 주입 ──────────────────────────────────
     def _generate_request(self, hot_prob: float = 0.1):
@@ -423,6 +519,9 @@ class FABSimulator:
         amr = next((a for a in self.amrs if a.id == amr_id), None)
         if amr is None or not amr.is_idle:
             return False
+        # 배터리: SoC 부족 차량은 배정 거부 (충전이 우선) — dispatch 후보 필터
+        if self.battery_enabled and amr.soc < SOC_LOW:
+            return False
         if not self.request_queue:
             return False
 
@@ -479,11 +578,37 @@ class FABSimulator:
     def step(self) -> dict:
         self.current_step += 1
 
+        prev_pos = [(a.x, a.y) for a in self.amrs]
         for amr in self.amrs:
             amr.step()
 
         self._resolve_collisions()
         self._detect_deadlocks()
+
+        # 누적 이동 셀 수 (충돌 롤백 후 실제 순이동 기준)
+        self.total_travel_dist += sum(
+            abs(a.x - px) + abs(a.y - py)
+            for a, (px, py) in zip(self.amrs, prev_pos)
+        )
+
+        # 배터리: 소모 에너지 누적 + 신규 방전 카운트
+        if self.battery_enabled:
+            self.total_drain_frac += sum(
+                self._drain_loaded if (a.request is not None and a.pickup_idx >= 0
+                                       and a.path_idx >= a.pickup_idx)
+                else self._drain_unload
+                for a, (px, py) in zip(self.amrs, prev_pos)
+                if (a.x, a.y) != (px, py)   # 실제 이동한 차만 (근사)
+            )
+            for amr in self.amrs:
+                if amr.status == AMRStatus.DEPLETED and not amr._depletion_counted:
+                    self.depleted_count += 1
+                    amr._depletion_counted = True
+                    if amr._charger_idx >= 0:
+                        self.charger_occ[amr._charger_idx].discard(amr.id)
+                        amr._charger_idx = -1
+                    self.reservation.release(amr.id)
+            self._charging_step()
 
         # 완료된 AMR 처리
         for amr in self.amrs:
@@ -491,9 +616,17 @@ class FABSimulator:
                 if amr.request is not None:
                     req          = amr.request
                     req.done_at  = self.current_step
-                    self.total_queue_time  += req.queue_time or 0
-                    self.total_travel_time += req.travel_time or 0
+                    q  = req.queue_time or 0
+                    tv = req.travel_time or 0
+                    self.total_queue_time  += q
+                    self.total_travel_time += tv
                     self.total_completed   += 1
+                    pri = req.priority
+                    self.completed_by_pri[pri]  += 1
+                    self.queue_time_by_pri[pri] += q
+                    self.travel_time_by_pri[pri] += tv
+                    if pri == Priority.HOT and q <= HOT_SLA_STEPS:
+                        self.hot_sla_met += 1
                     self.completed_requests.append(req)
                     # closed-loop: 배송 완료 → PySCFabSim lot release
                     if req.on_complete is not None:
@@ -504,6 +637,15 @@ class FABSimulator:
         if self.current_step % self.request_interval == 0:
             for _ in range(random.randint(1, 3)):
                 self._generate_request()
+
+        # 배터리: 휴리스틱 충전 트리거 (dispatch보다 먼저 → 충전행 차량은 배정 제외)
+        if self.battery_enabled:
+            self._charging_decisions()
+            self.total_unavail_steps += sum(
+                1 for a in self.amrs
+                if a.status in (AMRStatus.CHARGING, AMRStatus.DEPLETED)
+                or a.going_to_charge
+            )
 
         if self.auto_dispatch:
             self._auto_dispatch()
@@ -631,6 +773,79 @@ class FABSimulator:
                 break
             self.dispatch(amr.id)
 
+    # ── 배터리 / 충전 (A2 phase-1) ─────────────────────────
+    def _send_to_charge(self, amr: AMR) -> bool:
+        """여유 슬롯 있는 가장 가까운 충전소로 amr을 보냄. 슬롯은 출발 시 점유(여행+충전 동안 유지)."""
+        free = [i for i in range(len(self.chargers))
+                if len(self.charger_occ[i]) < CHARGER_SLOTS]
+        if not free:
+            return False   # 모든 충전소 만석 → 지금은 충전 불가 (contention)
+        # 거리순으로 가까운 충전소부터 경로 시도
+        free.sort(key=lambda i: abs(self.chargers[i][0] - amr.x)
+                              + abs(self.chargers[i][1] - amr.y))
+        for i in free:
+            path = astar_with_reservation(
+                self.grid_map, amr.position, self.chargers[i],
+                self.reservation, time_offset=self.current_step,
+            )
+            if path is None:
+                continue
+            self.reservation.reserve(path, amr.id, time_offset=self.current_step)
+            step_costs = compute_step_costs(
+                path, self.cell_mm, self.v_max_mms, self.acc_mms2, self.dec_mms2
+            )
+            amr.path        = path
+            amr.path_idx    = 0
+            amr.pickup_idx  = -1            # 충전 트립엔 픽업 없음
+            amr._step_costs = step_costs
+            amr._step_frac  = 0.0
+            amr.request     = None
+            amr.going_to_charge = True
+            amr._charger_idx = i
+            amr.status      = AMRStatus.MOVING
+            self.charger_occ[i].add(amr.id)
+            return True
+        return False
+
+    def _charging_step(self):
+        """CHARGING AMR의 SoC 회복 + 만충 시 슬롯 반납·IDLE 복귀."""
+        for amr in self.amrs:
+            if amr.status != AMRStatus.CHARGING:
+                continue
+            amr.soc = min(1.0, amr.soc + amr.charge_rate)
+            if amr.soc >= 1.0:
+                amr.soc = 1.0
+                if amr._charger_idx >= 0:
+                    self.charger_occ[amr._charger_idx].discard(amr.id)
+                    amr._charger_idx = -1
+                self.reservation.release(amr.id)
+                amr.reset_idle()
+
+    def _charging_decisions(self):
+        """휴리스틱 충전 트리거 (baseline). IDLE AMR을 정책에 따라 충전소로.
+
+        threshold   : soc < SOC_LOW 이면 충전.
+        opportunity : threshold + (대기요청 없고 soc<0.9이면 기회충전).
+        highlow     : 큐 길면 soc<SOC_LOW만, 큐 짧으면 soc<0.9까지 선제충전(적응 상한).
+        """
+        if not self.battery_enabled or not self.chargers:
+            return
+        q = len(self.request_queue)
+        for amr in self.amrs:
+            if not amr.is_idle:
+                continue
+            soc = amr.soc
+            want = False
+            if self.charge_policy == "threshold":
+                want = soc < SOC_LOW
+            elif self.charge_policy == "opportunity":
+                want = soc < SOC_LOW or (q == 0 and soc < 0.9)
+            elif self.charge_policy == "highlow":
+                upper = 0.9 if q < self.n_amrs else SOC_LOW   # 큐 길면 선제충전 억제
+                want = soc < upper
+            if want:
+                self._send_to_charge(amr)
+
     # ── KPI / 보상 ─────────────────────────────────────────
     def get_reward(self) -> float:
         avg_queue = (
@@ -650,6 +865,13 @@ class FABSimulator:
         # 에피소드 전체 평균 utilization (스냅샷 아닌 누적 평균)
         total_amr_steps = self.n_amrs * max(self.current_step, 1)
         utilization = round(self.total_busy_steps / total_amr_steps * 100, 2)
+        step = max(self.current_step, 1)
+
+        def _avg(d, pri):
+            c = self.completed_by_pri[pri]
+            return round(d[pri] / c, 2) if c > 0 else 0
+
+        n_hot = self.completed_by_pri[Priority.HOT]
         return {
             "step":         self.current_step,
             "throughput":   self.total_completed,
@@ -659,8 +881,34 @@ class FABSimulator:
             "utilization":  round(utilization, 2),
             "pending":      len(self.request_queue),
             "deadlocks":    self.deadlock_count,
+            # ── transport-layer 1차 지표 (A1) ──
+            # ① 강건성: 1k 스텝당 데드락 (에피소드 길이 무관 비교용)
+            "deadlock_per_1k": round(self.deadlock_count / step * 1000, 3),
             "replans":      self.replan_count,
             "aborts":       self.abort_count,
+            # ② fleet 효율: 누적 이동 셀 수 + 완료당 이동거리(에너지 프록시)
+            "total_travel_dist": self.total_travel_dist,
+            "dist_per_done": round(self.total_travel_dist / n, 2) if n > 0 else 0,
+            # per-priority 분리 (HOT=SLA 제약, NORMAL=효율)
+            "hot_done":     n_hot,
+            "normal_done":  self.completed_by_pri[Priority.NORMAL],
+            "hot_queue_time":    _avg(self.queue_time_by_pri,  Priority.HOT),
+            "normal_queue_time": _avg(self.queue_time_by_pri,  Priority.NORMAL),
+            "hot_travel_time":   _avg(self.travel_time_by_pri, Priority.HOT),
+            "normal_travel_time": _avg(self.travel_time_by_pri, Priority.NORMAL),
+            # ③ HOT SLA 충족률 (queue_time ≤ HOT_SLA_STEPS)
+            "hot_sla_rate": round(self.hot_sla_met / n_hot, 3) if n_hot > 0 else 1.0,
+            # ── 배터리 (A2 phase-1, battery_enabled일 때만 유의미) ──
+            # 가용성: 충전/방전으로 못 쓴 비율 1 - (충전·방전·충전이동 step / 전체 AMR·step)
+            "availability": round(1 - self.total_unavail_steps / total_amr_steps, 4)
+                            if self.battery_enabled else 1.0,
+            # scale 불변(실제 Ah): drain은 scale배 빠르므로 /scale로 환산
+            "energy_per_delivery": round(self.total_drain_frac * BATTERY_CAP_AH
+                                         / self.battery_scale / n, 4)
+                            if (self.battery_enabled and n > 0) else 0,
+            "depleted":     self.depleted_count,
+            "depleted_per_1k": round(self.depleted_count / step * 1000, 3)
+                            if self.battery_enabled else 0,
             "reward":       round(self.get_reward(), 2),
         }
 
