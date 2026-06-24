@@ -112,43 +112,45 @@ sim.dispatch(nearest.id, request_id=req.id)
 
 ---
 
-## transport_score
+## transport_score (팀 단일 공유 Judge)
 
-**FIFO-Nearest = 1.0** 기준. 핵심 지표 5개를 비율로 정규화한 **가중 합산** 점수.
+> **갱신(2026-06-24)**: 팀에 결합 스코어가 둘로 갈렸던 것(이 파일의 비율정규화 ↔ eval_baseline 비용기반)을
+> **하나의 공유 함수 `experiments.eval_baseline.transport_score`로 통합**. 이 baseline은 그걸 import해 쓴다.
+> (구조·단위 확정, W_* 숫자는 실험 돌리며 팀이 튜닝. 설계 근거: [metrics_and_reward_design.md](metrics_and_reward_design.md))
 
-### 정규화 방식
+### 공유 Judge = 배달 1건당 비용 (낮을수록 좋음, 0=최고)
 
-| 지표 | 방향 | 정규화 비율 |
-|------|------|-------------|
-| `throughput` | ↑ | strategy / FIFO |
-| `deadlock_per_1k` | ↓ | FIFO / strategy |
-| `replans_aborts` | ↓ | FIFO / strategy |
-| `dist_per_done` | ↓ | FIFO / strategy |
-| `utilization` | ↑ | strategy / FIFO |
-
-모든 비율은 FIFO 대비 **1.0 = 동일**, **> 1.0 = 전략이 더 좋음** 을 의미한다.
-
-### 계산 공식
+모든 항을 **"배달 1건당 손실 step"**으로 통일 — robustness(deadlock/blocking/deplete)는 `raw count/throughput`,
+efficiency(travel/energy)는 이미 배달당. throughput은 분모라 자동 보상(베이스라인).
 
 ```
-raw = 1.0 × r(throughput)
-    + 1.0 × r(deadlock_per_1k)
-    + 0.5 × r(replans_aborts)
-    + 0.3 × r(dist_per_done)
-    + 0.3 × r(utilization)
-
-normalized = raw / fifo_raw          # FIFO 자신 → raw = 3.1 → normalized = 1.0
-
-if hot_sla_rate < 0.9:
-    normalized -= 5.0 / 3.1         # ≈ -1.61 패널티 (정규화 스케일)
+cost = W_DL·(deadlocks/n) + W_BLOCK·(blocking/n) + W_DEPLETE·(depleted/n)
+     + W_TRAV·dist_per_done + W_ENERGY·energy_per_delivery
+     + W_SLA·max(0, HOT_SLA_MIN − hot_sla_rate)      # HOT SLA 소프트 게이트(제약)
+score = −cost          (n = throughput)
 ```
 
-FIFO는 자기 자신과 비교하므로 모든 비율 = 1.0 → raw = 3.1 → normalized = **1.0** 이 보장된다.
+| W (실비용 grounding) | 값 | 의미 |
+|---|---|---|
+| `W_DL` | 5000 | 데드락 1건 = 영구마비 step |
+| `W_BLOCK` | 10 | blocking 1건 = ~10 step 지연 |
+| `W_TRAV` | 1 | 이동 1셀 = 1 step |
+| `W_DEPLETE` | 3000 | 방전 1건 = 견인 다운타임 step |
+| `W_ENERGY` | 26 | 1 Ah 충전 = 충전소 대기 step |
+| `W_SLA` | 200 | HOT SLA 미달분당 (소프트 제약, 효율 항과 동급 스케일) |
 
-> **이전 설계(기하평균 8개)와 차이**:  
-> 초판은 `avg_queue_time`, `avg_total_time`, `blocking_per_1k`, `hot_sla_rate` 포함 8개 기하평균.  
-> 현재는 교통지옥 핵심 5개 가중합 + SLA 패널티로 단순화.  
-> 기하평균은 기준 raw가 음수일 때 정규화 부호가 역전되는 버그가 있어 양수 비율 가중합으로 교체.
+> **배터리 포함** → 충전 RL도 같은 judge로 평가 가능(battery off면 energy/deplete=0 자동).
+
+### 이 baseline의 표현 (FIFO=1.0 비율)
+
+공유 judge는 절대 비용(낮을수록 좋음)이므로, 이 스크립트는 **FIFO 대비 비율**로 표현:
+```
+transport_score(전략) = cost(FIFO) / cost(전략)      # 1.0=FIFO 동일, >1=전략이 더 우수
+```
+→ 콘솔/저장 모두 **FIFO-Nearest = 1.0 기준, 높을수록 좋음**. (절대 비용 breakdown은 `eval_baseline.py` 출력 참고.)
+
+> **이력**: 초판은 5지표(throughput·deadlock·replans·dist·util) 비율가중합 + SLA 패널티(5.0/3.1) 였으나,
+> **배터리 항이 없어 충전 RL을 평가 못 하는** 한계 → taehee 비용토대(배터리 포함)로 통합하고 비율표현만 계승.
 
 ---
 
@@ -167,7 +169,7 @@ JSON 구조:
     "n_amrs": 20, "max_steps": 500,
     "seeds": [42, 99, 123, 256, 512],
     "baseline_ref": "FIFO-Nearest",
-    "transport_score_weights": { "throughput": 1.0, "deadlock_per_1k": 1.0, ... }
+    "transport_score_weights": { "deadlock": 5000, "blocking": 10, "travel": 1, "deplete": 3000, "energy": 26, "hot_sla": 200, "hot_sla_min": 0.9 }
   },
   "results": {
     "FIFO-Nearest": { "throughput": ..., "replans_aborts": ..., "hot_sla_rate": ..., ... },
