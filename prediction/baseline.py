@@ -27,6 +27,10 @@ from pathlib import Path
 import numpy as np
 
 from simulator.amr.simulator import FABSimulator, Priority
+# 팀 단일 Judge: eval_baseline.transport_score 를 공유 (가중치 중복 정의 금지)
+from experiments.eval_baseline import (
+    transport_score, W_DL, W_BLOCK, W_TRAV, W_DEPLETE, W_ENERGY, W_SLA, HOT_SLA_MIN,
+)
 
 # ── 경로 ──────────────────────────────────────────────────────────
 _ROOT = Path(__file__).parent.parent
@@ -41,20 +45,6 @@ MAX_STEPS = 500
 REQUEST_INTERVAL = 15
 SEEDS = [42, 99, 123, 256, 512]
 HOT_SLA_THRESH = 30   # simulator.py의 HOT_SLA_STEPS와 동일
-
-# ── transport_score 가중치 ─────────────────────────────────────────
-# higher-is-better: strategy/FIFO  (>1 = 전략이 더 좋음)
-# lower-is-better:  FIFO/strategy  (>1 = 전략이 더 좋음)
-_W_THROUGHPUT = 1.0
-_W_DEADLOCK = 1.0
-_W_REPLANS = 0.5
-_W_DIST = 0.3
-_W_UTIL = 0.3
-_W_SUM = (
-    _W_THROUGHPUT + _W_DEADLOCK + _W_REPLANS + _W_DIST + _W_UTIL
-)  # = 3.1
-_HOT_SLA_MIN = 0.9
-_HOT_SLA_PENALTY = 5.0   # 정규화 후 점수에서 차감 (FIFO=1.0 기준)
 
 
 # ── KPI 수집 ──────────────────────────────────────────────────────
@@ -262,68 +252,20 @@ def _print_progress(kpi: dict) -> None:
 
 # ── transport_score ───────────────────────────────────────────────
 
-def _raw_transport_score(kpi: dict, fifo_kpi: dict) -> float:
-    """
-    FIFO-Nearest 대비 비율 기반 결합 점수 (raw, 양수).
-
-    higher-is-better: strategy / FIFO
-    lower-is-better:  FIFO / strategy (역수)
-    양쪽 모두 1.0 = FIFO와 동일, >1 = 전략이 더 좋음.
-
-    FIFO 자신 -> raw = _W_SUM = 3.1, 정규화 후 1.0.
-
-    설계 근거:
-    norm = val/base or base/val 로 모두 양수화한 뒤 가중 합산.
-    단순 +/- 부호 방식은 base가 음수일 때 정규화 부호가 역전되는 버그 발생.
-    """
-    def _r(key: str, higher: bool) -> float:
-        v = kpi.get(key)
-        b = fifo_kpi.get(key)
-        if v is None or b is None:
-            return 1.0   # 데이터 없으면 중립
-        if higher:
-            return (v / b) if b != 0 else (1.0 if v == 0 else 9.99)
-        # lower-is-better: FIFO / strategy
-        if v == 0 and b == 0:
-            return 1.0
-        if v == 0:
-            return 9.99  # 전략에 결함 없음 -> 매우 좋음
-        return b / v
-
-    return (
-        _W_THROUGHPUT * _r("throughput", higher=True)
-        + _W_DEADLOCK * _r("deadlock_per_1k", higher=False)
-        + _W_REPLANS * _r("replans_aborts", higher=False)
-        + _W_DIST * _r("dist_per_done", higher=False)
-        + _W_UTIL * _r("utilization", higher=True)
-    )
-
-
 def compute_transport_scores(
     results: dict, baseline: str = "FIFO-Nearest"
 ) -> dict:
+    """공유 Judge(eval_baseline.transport_score) 기반 — FIFO 대비 비율 (FIFO=1.0, 높을수록 좋음).
+
+    transport_score는 '배달당 비용'(낮을수록 좋음, HOT SLA 게이트 포함) → 비율 = fifo_cost/method_cost.
+    팀 단일 judge 사용(가중치 중복 제거). 배터리 off면 energy/deplete 항 자동 0.
     """
-    transport_score 계산.
-    1. raw = _raw_transport_score(kpi, fifo_kpi)
-    2. normalized = raw / fifo_raw  (FIFO = 1.0)
-    3. HOT SLA < 0.9 이면 penalty 차감 (정규화 후 적용)
-    """
-    fifo_kpi = results.get(baseline, {})
-    raw_scores = {
-        name: _raw_transport_score(kpi, fifo_kpi)
-        for name, kpi in results.items()
+    costs = {name: -transport_score(kpi)[0] for name, kpi in results.items()}
+    fifo_cost = costs.get(baseline) or 1.0
+    return {
+        name: round(fifo_cost / c, 4) if c > 0 else 9.99
+        for name, c in costs.items()
     }
-    fifo_raw = raw_scores.get(baseline) or _W_SUM
-
-    scores: dict = {}
-    for name, raw in raw_scores.items():
-        norm = raw / fifo_raw
-        sla = results[name].get("hot_sla_rate")
-        if sla is not None and sla < _HOT_SLA_MIN:
-            norm -= _HOT_SLA_PENALTY / _W_SUM
-        scores[name] = round(norm, 4)
-
-    return scores
 
 
 # ── 출력 ─────────────────────────────────────────────────────────
@@ -408,14 +350,10 @@ def print_table(results: dict, scores: dict) -> None:
     print(row)
     print(sep)
     print(
-        f"\n  * transport_score: FIFO-Nearest=1.0 기준 (높을수록 좋음)"
-        f"\n    weights: throughput(x{_W_THROUGHPUT})"
-        f" deadlock/1k(x{_W_DEADLOCK})"
-        f" replans_aborts(x{_W_REPLANS})"
-        f" dist/done(x{_W_DIST})"
-        f" util(x{_W_UTIL})"
-        f"\n    HOT SLA < {_HOT_SLA_MIN}"
-        f" -> -{_HOT_SLA_PENALTY / _W_SUM:.2f} 패널티"
+        f"\n  * transport_score: FIFO-Nearest=1.0 기준 (높을수록 좋음, 공유 Judge=배달당 비용 비율)"
+        f"\n    weights(step/event): deadlock(x{W_DL:.0f}) blocking(x{W_BLOCK:.0f})"
+        f" travel(x{W_TRAV:.0f}) deplete(x{W_DEPLETE:.0f}) energy(x{W_ENERGY:.0f})"
+        f"\n    HOT SLA 게이트: <{HOT_SLA_MIN} 미달분당 x{W_SLA:.0f}"
     )
 
 
@@ -431,13 +369,9 @@ def save_results(results: dict, scores: dict) -> None:
             "seeds": SEEDS,
             "baseline_ref": "FIFO-Nearest",
             "transport_score_weights": {
-                "throughput": _W_THROUGHPUT,
-                "deadlock_per_1k": _W_DEADLOCK,
-                "replans_aborts": _W_REPLANS,
-                "dist_per_done": _W_DIST,
-                "utilization": _W_UTIL,
-                "hot_sla_penalty": _HOT_SLA_PENALTY,
-                "hot_sla_min": _HOT_SLA_MIN,
+                "deadlock": W_DL, "blocking": W_BLOCK, "travel": W_TRAV,
+                "deplete": W_DEPLETE, "energy": W_ENERGY, "hot_sla": W_SLA,
+                "hot_sla_min": HOT_SLA_MIN,
             },
         },
         "results": results,
