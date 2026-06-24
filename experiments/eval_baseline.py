@@ -185,6 +185,13 @@ def main():
     if args.model and not Path(args.model).exists():
         print(f"❌ 모델 없음: {args.model}"); return
 
+    # ── ② 결합 스코어(Judge)용 가중치 초기 설정 (실비용 기하 기반) ──
+    W_DL      = 5000.0  # 데드락: 영구 마비에 대한 엄청난 시간 손실 페널티
+    W_BLOCK   = 10.0    # 블로킹: 일시 대기 지연(평균 약 10 스텝 지연) 페널티
+    W_TRAV    = 1.0     # 이동거리: 1셀당 1 스텝 시간/이동과 1:1 환산
+    W_DEPLETE = 3000.0  # 방전: 견인 회수 다운타임 기회비용 페널티
+    W_ENERGY  = 26.0    # 에너지: 1 Ah 충전에 걸리는 충전소 대기 스텝 수 (30분/52Ah)
+
     tag = f"휴리스틱({args.dispatch})" if args.heuristic else Path(args.model).name
     grid_tag = "OHT(rail)" if args.oht else "AMR(floor)"
     print(f"=== 평가: {tag} | {grid_tag} ===")
@@ -208,22 +215,58 @@ def main():
         split = split_kpi(env._inner.sim)
         infos.append(info)
         splits.append(split)
-        print(f"  ep{ep}: throughput={info['throughput']:>5} "
-              f"deadlocks={info['deadlocks']:>5} replans={info.get('replans',0):>5} "
-              f"aborts={info.get('aborts',0):>5} queue={info['avg_queue_time']:.0f}")
+
+        # 에피소드별 단일 결합 스코어 계산
+        ep_score = -(
+            W_DL * info.get('deadlock_per_1k', 0) +
+            W_BLOCK * info.get('blocking_per_1k', 0) +
+            W_TRAV * info.get('dist_per_done', 0) +
+            W_DEPLETE * info.get('depleted_per_1k', 0) +
+            W_ENERGY * info.get('energy_per_delivery', 0)
+        )
+        print(f"  ep{ep}: throughput={info['throughput']:>4} "
+              f"deadlocks={info['deadlocks']:>2} blocked={info.get('blocking', 0):>3} "
+              f"depleted={info.get('depleted', 0):>2} replans={info.get('replans', 0):>3} "
+              f"score={ep_score:>8.1f}")
 
     def avg(k): return np.mean([i.get(k, 0) for i in infos])
     per1k = lambda k: avg(k) / args.max_steps * 1000
     def savg(prio, k): return np.mean([s[prio][k] for s in splits])
 
+    # 1차 지표 전체 평균 추출
+    avg_dl_per_1k = avg('deadlock_per_1k')
+    avg_block_per_1k = avg('blocking_per_1k')
+    avg_dist_per_done = avg('dist_per_done')
+    avg_deplete_per_1k = avg('depleted_per_1k')
+    avg_energy_per_delivery = avg('energy_per_delivery')
+
+    # 최종 가중 결합 스코어(Judge) 계산
+    combined_score = -(
+        W_DL * avg_dl_per_1k +
+        W_BLOCK * avg_block_per_1k +
+        W_TRAV * avg_dist_per_done +
+        W_DEPLETE * avg_deplete_per_1k +
+        W_ENERGY * avg_energy_per_delivery
+    )
+
+    print("\n=== 결합 스코어 (② Judge - 비용 기반 단일 점수) ===")
+    print(f"Combined Score: {combined_score:.2f} (0에 가까울수록 우수)")
+    print(f"  └ Deadlock 페널티   (-{W_DL:>6} * {avg_dl_per_1k:.3f}): {-W_DL*avg_dl_per_1k:>8.2f}")
+    print(f"  └ Blocking 페널티   (-{W_BLOCK:>6} * {avg_block_per_1k:.3f}): {-W_BLOCK*avg_block_per_1k:>8.2f} (시뮬레이터 지원 시)")
+    print(f"  └ Travel 거리 비용   (-{W_TRAV:>6} * {avg_dist_per_done:.1f}): {-W_TRAV*avg_dist_per_done:>8.2f}")
+    print(f"  └ Deplete 방전 페널티 (-{W_DEPLETE:>6} * {avg_deplete_per_1k:.3f}): {-W_DEPLETE*avg_deplete_per_1k:>8.2f}")
+    print(f"  └ Energy 소모 비용   (-{W_ENERGY:>6} * {avg_energy_per_delivery:.4f}): {-W_ENERGY*avg_energy_per_delivery:>8.2f}")
+
     # transport-layer 1차 지표 (problem-reframe: fab 처리량 아님, AMR 운영 효율).
     # deadlock_per_1k 등 정규화 값은 get_kpi()가 실제 스텝수 기준으로 계산(에피소드 조기종료 무관).
     print("\n=== transport-layer 1차 지표 (평균) ===")
-    print(f"① 강건성   deadlock/1k:   {avg('deadlock_per_1k'):.3f}   "
+    print(f"① 강건성   deadlock/1k:   {avg_dl_per_1k:.3f}   "
           f"(데드락 {avg('deadlocks'):.1f}건)")
+    print(f"           blocking/1k:   {avg_block_per_1k:.3f}   "
+          f"(대기 blocking {avg('blocking'):.1f}건)")
     print(f"           혼잡 replans:   {avg('replans'):.1f}  aborts: {avg('aborts'):.1f}  "
           f"(합 {avg('replans')+avg('aborts'):.1f})")
-    print(f"② fleet효율 이동거리/완료: {avg('dist_per_done'):.1f} 셀   "
+    print(f"② fleet효율 이동거리/완료: {avg_dist_per_done:.1f} 셀   "
           f"(누적 {avg('total_travel_dist'):.0f} 셀, 에너지 프록시)")
     print(f"           utilization:    {avg('utilization'):.1f}%")
     print(f"③ HOT SLA  충족률(≤{HOT_SLA_STEPS}step): {avg('hot_sla_rate')*100:.1f}%")
@@ -241,14 +284,18 @@ def main():
 
     if args.closed_loop:
         fk = lambda k: np.mean([i.get(k, 0) for i in infos])
+        valid_done_infos = [i for i in infos if i.get('fab_done_lots', 0) > 0]
+        def fk_valid(k):
+            return np.mean([i.get(k, 0) for i in valid_done_infos]) if valid_done_infos else 0.0
+
         print("\n=== [보조] fab 일정 준수 (closed-loop, WIP CR) — 디커플, 1차 지표 아님 ===")
         print(f"WIP lot:          {fk('fab_wip_lots'):.0f}   (완료 {fk('fab_done_lots'):.0f})")
         print(f"평균 CR:          {fk('fab_cr_mean'):.3f}   (HOT {fk('fab_hot_cr_mean'):.3f})   ※높을수록 일정 여유")
         print(f"납기 뒤처짐(CR<1): {fk('fab_behind_rate'):.1f}%   (HOT {fk('fab_hot_behind_rate'):.1f}%)")
         print(f"평균 진행 스텝:    {fk('fab_steps_done_mean'):.1f}")
-        if fk('fab_done_lots') > 0:
-            print(f"[완료분] 정시율 {fk('fab_ontime_rate'):.1f}% | 평균지각 {fk('fab_tardiness_mean')/3600:.2f}h "
-                  f"| 사이클 {fk('fab_cycle_mean')/3600:.2f}h")
+        if len(valid_done_infos) > 0:
+            print(f"[완료분] 정시율 {fk_valid('fab_ontime_rate'):.1f}% | 평균지각 {fk_valid('fab_tardiness_mean')/3600:.2f}h "
+                  f"| 사이클 {fk_valid('fab_cycle_mean')/3600:.2f}h")
 
 
 if __name__ == "__main__":
