@@ -19,6 +19,7 @@ deadlock·replan·abort는 에피소드 길이에 비례하므로 1000스텝당 
 
 import sys
 import argparse
+import importlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -36,20 +37,26 @@ DATASET_DIR = str(Path(__file__).parents[1] / "external" / "PySCFabSim" / "datas
 RAIL_GRID   = Path(__file__).parents[1] / "rware_simulator" / "output" / "rail_grid.npy"
 
 
-def resolve_strategy(name):
-    """전략 inner env 클래스 해결 — 공유 도구가 로컬 전략에 *하드 의존* 안 하도록.
+def resolve_strategy(spec):
+    """전략 inner env 클래스 해결 — 공유 도구가 *어떤 개인 전략에도* 하드의존 안 하도록 일반화.
 
-    base → None (공유 FabAMREnv, 누구나 사용 가능)
-    fa   → 로컬 전용 FlowAwareFabEnv (없으면 명확히 안내). 팀원 환경엔 fa 없음.
+    spec:
+        "base" (또는 빈값)        → None (공유 FabAMREnv, 누구나 사용 가능)
+        "module.path:ClassName"   → 동적 import
+                                     (예: mcs.dispatcher.strategies.fa:FlowAwareFabEnv)
+    각 팀원은 자기 전략을 `--strategy 내모듈:내Env` 로 주입 — 코드에 개인 전략 하드코딩 없음.
     """
-    if name == "fa":
-        try:
-            from mcs.dispatcher.strategies.fa import FlowAwareFabEnv
-            return FlowAwareFabEnv
-        except ImportError:
-            raise SystemExit("❌ --strategy fa: FA 전략 코드는 로컬 전용이라 없음. "
-                             "기본 env로 평가하려면 옵션 생략(=base).")
-    return None
+    if not spec or spec == "base":
+        return None
+    if ":" not in spec:
+        raise SystemExit(f"❌ --strategy '{spec}': 'base' 또는 'module.path:ClassName' 형식이어야 함 "
+                         f"(예: mcs.dispatcher.strategies.fa:FlowAwareFabEnv).")
+    mod_path, cls_name = spec.rsplit(":", 1)
+    try:
+        mod = importlib.import_module(mod_path)
+        return getattr(mod, cls_name)
+    except (ImportError, AttributeError) as e:
+        raise SystemExit(f"❌ --strategy '{spec}' 로드 실패: {e}")
 
 
 def make_coupled(n_amrs, max_steps, seed, inner_env_cls=None, early_replan=True,
@@ -163,8 +170,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", help="평가할 MaskablePPO .zip (미지정 시 --heuristic 필요)")
     ap.add_argument("--heuristic", action="store_true", help="휴리스틱 디스패처 (모델 불필요)")
-    ap.add_argument("--strategy", choices=["base", "fa"], default="base",
-                    help="모델 평가용 inner env: base(공유 FabAMREnv) / fa(로컬 전용)")
+    ap.add_argument("--strategy", default="base",
+                    help="모델 inner env: 'base'(공유) 또는 'module.path:ClassName' "
+                         "(예: mcs.dispatcher.strategies.fa:FlowAwareFabEnv)")
     ap.add_argument("--dispatch", choices=["nearest", "cost"], default="nearest",
                     help="휴리스틱 배정: nearest(기하거리) / cost(거리+혼잡, 똑똑한 nearest)")
     ap.add_argument("--n-amrs", type=int, default=20)
