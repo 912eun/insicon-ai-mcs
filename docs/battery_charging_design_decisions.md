@@ -37,6 +37,35 @@
 
 **공통 메시지**: 배터리/충전을 dispatching에 통합하는 RL은 활발하나 **fab은 비어있다**.
 
+---
+
+## 1.5 검증 (2026-06-24) — "RL 헤드룸 있나 / 실무 효용 있나"
+
+> 배경: 디스패칭-RL이 휴리스틱을 못 이긴다는 측정 결과([jang_papers_review.md](jang_papers_review.md) §5)
+> 후, "배터리도 같은 함정(휴리스틱이면 충분)인지" 투자 전 검증. 결론 = **배터리는 통과(디스패칭과 반대)**.
+
+**(a) RL 헤드룸 — 있음 (Bischoff 본문 실측):**
+- opportunity charging이 **지배적**(핫스왑 비주류, LFP 화학) → "언제 충전" 결정이 *살아있는* 문제. non-problem 아님.
+- Best RL(LightShaped, 582s) vs **Best 적응형 휴리스틱**(HighLow 40%, 702s) = **RL +17%**. 고정 threshold는 더 큰 손해.
+- threshold가 지는 원리: "non-adaptive는 **가용 AMR이 너무 적어짐**" — 변동 workload·큐를 못 읽어 과/저충전.
+  = **fleet 가용성의 동적 트레이드오프(비-myopic)** → 디스패칭(myopic, 헤드룸 0)과 정반대 구조.
+- ⚠ 17%는 real이나 dramatic 아님 + **warehouse 결과**(fab 전이는 우리가 측정). 보상설계 민감(Basic 붕괴) → Light 필수.
+
+**(b) 실무 효용 — 있음, 우리 목적과 직결:**
+- 충전 최적화 → **fleet 크기 절감**: 전통 충전은 다운타임 메우려 **20~35% 과잉 구매**, 스마트 충전이면 **15% 작은 fleet**.
+  TCO −32%, 페이백 2배. → **로드맵 B4 성공기준("더 적은 차로 같은 서비스")과 동일 지표.**
+- fab: 24/7 필수, 다운타임 $3~10M/h, 가용성 95%+ 목표. 해법이 "지능형 충전 스케줄링"으로 제시. fab-특정 문서는
+  얇음(신생 = novel 기회와 일치).
+- **위협(반대 진영)**: wireless/en-route 급전(주행 중 충전)이 충전 결정을 *하드웨어로 제거*(= Jang OLEV 진영).
+  단 비싼 인프라(바닥 개조)라 **클린룸 fab은 station 기반 opportunity charging 존속** → 우리 *소프트웨어 스케줄링* 문제 유지.
+  구도: 하드웨어(무선/OLEV) vs 소프트웨어(우리 RL) → 교수님(무선)과 **상보적** 컨택 프레이밍.
+
+**Bischoff 미탐색 = 우리 추가 헤드룸:** 선제충전(수요예측)·fleet 조율 안 함(개별 AMR을 집계 feature로만).
+fab은 충전소 제약↑로 contention이 warehouse보다 클 수 있음(가설) → Bischoff 넘는 기여 여지.
+
+**검증 결론:** 배터리 = (a) 문제 살아있음 (b) RL 헤드룸 17% 실측 (c) 비-myopic 원리 (d) fleet-size 절감으로 실무효용.
+**단 첫 실험 = 우리 fab 시뮬에 threshold baseline 넣고 헤드룸 직접 측정**(Bischoff 17% 그대로 가정 금지).
+
 **참고 수치 (Bischoff, 포팅 가능):** 용량 52Ah · 소모 15Ah(적재)/10Ah(공차) ·
 선형충전 30분→100% · 충전소 3개 등거리 · obs 19 feature · PPO(sb3).
 
@@ -89,6 +118,32 @@
 
 ---
 
+## 2.5 합의된 결정 (2026-06-24) — A2 착수 기준
+
+> 전제 갱신: 디스패칭-RL 기각([[dispatch-rl-rejected-battery-confirmed]], jang_papers_review §5).
+> **충전이 *유일한* RL 레이어.** 그래서 원문 ①의 "RL은 dispatch만" 프레임은 폐기.
+
+| # | 결정 | **합의값** |
+|---|---|---|
+| ① | 배터리-RL 관계 | **1단계 = 전부 휴리스틱**(dispatch=nearest, charge=룰, 배터리=제약) = 헤드룸 측정 baseline. **2단계 = 충전만 RL**(유일 학습 레이어). dispatch-RL 없음. |
+| ② | Action space | **A_binary** `{서빙 / 100%충전}`, **event-triggered**(AMR idle 시 결정). masking: SoC<20% 강제충전, 현재≥목표 비실행 |
+| ③ | Reward shaping | **Light** (Bischoff: Basic 붕괴·Light 최고). transport 보상에 충전항 *가볍게* |
+| ④ | health/aging | **1단계 SoC만**, health(용량 fade)는 확장 축으로 명시만 |
+| ⑤ | baseline 휴리스틱 | **threshold + opportunity + HighLow(적응형)** — ★HighLow가 Bischoff 최강 휴리스틱이므로 헤드룸은 *이것 대비* 측정해야 정직 |
+| ⑥ | 충전소 | **3개, 구역(NW/NE/SW/SE) 균형** → 개수는 민감도/헤드룸 축(적을수록 contention↑→헤드룸↑) |
+| ⑦ | 물리 파라미터 | **현실 Bischoff 포팅이 기본**(52Ah·15/10Ah·30분만충 → step 환산). 축소판은 **dev 전용 단축키**, 최종은 현실값 재확인. **용량은 "빡빡 배터리 레짐" sweep 축**(무거운적재/적은충전소/작은팩 fab = 현실 시나리오). 평가 에피소드는 길게(20~30k step). |
+| ⑧ | **(신규) 방전 처리** | SoC 0 → 그 자리 **immobilized + `depleted_count`**, dispatch 후보 제외(deadlock급 실패). 회수/towing은 1단계 생략 → W_DEPLETE 패널티 근거 |
+
+**⑦ 핵심 근거(2026-06-24 토론):** Bischoff 원값은 만충 ~9,400 step인데 우리 에피소드 3k~10k라
+**배터리가 거의 안 물림**(over-prov 함정). 진짜 비용 동인 = *고정 학습예산 내 충전 사이클 수 = total_steps/사이클길이*
+(현실값 500k→~53사이클, 축소판 →~278). → 현실값은 **~5배 학습(약 3.6h)** 필요하나 감당 가능. 축소는
+*현실성 훼손*(40분 배터리)이라 **dev 전용**, 보고는 현실값. "사이클 ≪ 에피소드"가 학습 신호 조건.
+
+**binds 조건:** 헤드룸 = (충전 묶인 fleet 비율 ~15~30%, 실무 oversizing 정합) × (수요 변동). 우리 coupled env는
+util~99%+버스트라 변동 있음. 용량 sweep으로 헤드룸 최대(빡빡) vs 0(헐렁) 지점 탐색 = fleet-size sweep과 동일 논리.
+
+---
+
 ## 3. 지표·보상에 미치는 영향 (transport-layer 축에 결합)
 
 배터리는 앞서 정의한 transport-layer 목적([problem_reframe §6])에 자연 결합한다.
@@ -123,13 +178,14 @@ reward += − W_DEPLETE · depleted_this_step      # 방전 = deadlock급 실패
 
 ---
 
-## 5. 합의 체크리스트
+## 5. 합의 체크리스트 — **합의 완료 (2026-06-24, §2.5)**
 
-- [ ] ① 제약-우선(A)으로 1단계 합의?
-- [ ] ② A_binary로 시작?
-- [ ] ③ Light shaping?
-- [ ] ④ 1단계 SoC만, health는 확장?
-- [ ] ⑤ threshold+opportunity baseline?
-- [ ] ⑥ 충전소 3개·구역배치?
-- [ ] ⑦ Bischoff 파라미터 포팅?
-- [ ] 신규 KPI 키(availability/energy_per_delivery/depleted_per_1k) 통일?
+- [x] ① 1단계 전부 휴리스틱(dispatch=nearest) baseline → 2단계 충전만 RL (dispatch-RL 폐기 반영)
+- [x] ② A_binary, event-triggered, masking
+- [x] ③ Light shaping
+- [x] ④ 1단계 SoC만, health는 확장
+- [x] ⑤ threshold + opportunity **+ HighLow**(헤드룸은 최강 휴리스틱 대비)
+- [x] ⑥ 충전소 3개·구역배치 (개수=헤드룸 축)
+- [x] ⑦ 현실 Bischoff 포팅 기본 + 축소는 dev 전용 + 용량 sweep(빡빡 레짐) + 평가 에피소드 20~30k
+- [x] ⑧ (신규) 방전 = immobilized + depleted_count
+- [x] 신규 KPI 키(availability/energy_per_delivery/depleted_per_1k) 통일

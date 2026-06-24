@@ -30,6 +30,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.save_util import load_from_zip_file
 
 from simulator.fab_process.smat2022.coupled_env import CoupledFabEnv
+from simulator.amr.simulator import HOT_SLA_STEPS
 
 DATASET_DIR = str(Path(__file__).parents[1] / "external" / "PySCFabSim" / "datasets" / "SMT2020_LVHM")
 RAIL_GRID   = Path(__file__).parents[1] / "rware_simulator" / "output" / "rail_grid.npy"
@@ -61,8 +62,33 @@ def load_policy_only(model_path, env):
     return model
 
 
-def run_heuristic_episode(env):
-    """nearest: 최우선 요청을 가장 가까운 IDLE AMR에 배정."""
+def _nearest_cost(sim, amr, gx, gy, w_cong=0.0):
+    """기하 거리만 (순수 nearest)."""
+    return abs(amr.x - gx) + abs(amr.y - gy)
+
+
+def _congestion_cost(sim, amr, gx, gy, w_cong=3.0):
+    """거리 + corridor 혼잡 패널티 = 학습 없는 Jang형 cost-greedy.
+
+    후보 AMR→픽업 사이 bounding-box 안의 '바쁜(비유휴) 다른 AMR' 수를 혼잡 프록시로 가산.
+    가까워도 경로가 막혔으면 손해 → 좀 멀어도 빈 경로의 차를 고른다(Jang Q의 결정론적 근사).
+    """
+    dist = abs(amr.x - gx) + abs(amr.y - gy)
+    x0, x1 = (amr.x, gx) if amr.x <= gx else (gx, amr.x)
+    y0, y1 = (amr.y, gy) if amr.y <= gy else (gy, amr.y)
+    busy = 0
+    for o in sim.amrs:
+        if o.id == amr.id or o.is_idle:
+            continue
+        if x0 <= o.x <= x1 and y0 <= o.y <= y1:
+            busy += 1
+    return dist + w_cong * busy
+
+
+def run_heuristic_episode(env, dispatch="nearest"):
+    """최우선 요청을 cost 최소 IDLE AMR에 배정.
+    dispatch='nearest' → 기하 거리 / 'cost' → 거리+혼잡(똑똑한 nearest)."""
+    cost_fn = _congestion_cost if dispatch == "cost" else _nearest_cost
     env.reset()
     sim = env._inner.sim
     info = {}
@@ -72,8 +98,8 @@ def run_heuristic_episode(env):
         else:
             req = sim.get_next_request()
             loc = sim.port_locations[req.from_port]
-            best = min(sim.get_idle_amrs(),
-                       key=lambda a: abs(a.x - loc["grid_x"]) + abs(a.y - loc["grid_y"]))
+            gx, gy = loc["grid_x"], loc["grid_y"]
+            best = min(sim.get_idle_amrs(), key=lambda a: cost_fn(sim, a, gx, gy))
             action = best.id
         _, _, done, info = env.step(action)
         if done:
@@ -121,7 +147,9 @@ def split_kpi(sim):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", help="평가할 MaskablePPO .zip (미지정 시 --heuristic 필요)")
-    ap.add_argument("--heuristic", action="store_true", help="nearest 휴리스틱 (모델 불필요)")
+    ap.add_argument("--heuristic", action="store_true", help="휴리스틱 디스패처 (모델 불필요)")
+    ap.add_argument("--dispatch", choices=["nearest", "cost"], default="nearest",
+                    help="휴리스틱 배정: nearest(기하거리) / cost(거리+혼잡, 똑똑한 nearest)")
     ap.add_argument("--n-amrs", type=int, default=20)
     ap.add_argument("--episodes", type=int, default=3)
     ap.add_argument("--max-steps", type=int, default=10_000)
@@ -140,7 +168,7 @@ def main():
     if args.model and not Path(args.model).exists():
         print(f"❌ 모델 없음: {args.model}"); return
 
-    tag = "휴리스틱(nearest)" if args.heuristic else Path(args.model).name
+    tag = f"휴리스틱({args.dispatch})" if args.heuristic else Path(args.model).name
     grid_tag = "OHT(rail)" if args.oht else "AMR(floor)"
     print(f"=== 평가: {tag} | {grid_tag} ===")
     print(f"n_amrs={args.n_amrs} | 에피소드={args.episodes} | max_steps={args.max_steps:,} "
@@ -152,7 +180,7 @@ def main():
                            flow_aware=not args.heuristic, early_replan=early, oht=args.oht,
                            closed_loop=args.closed_loop)
         if args.heuristic:
-            info = run_heuristic_episode(env)
+            info = run_heuristic_episode(env, dispatch=args.dispatch)
             split = split_kpi(env._inner.sim)   # 휴리스틱은 auto-reset 없음 → 직접 읽어도 안전
         else:
             vec = DummyVecEnv([lambda e=env: Monitor(e)])
@@ -169,14 +197,21 @@ def main():
     per1k = lambda k: avg(k) / args.max_steps * 1000
     def savg(prio, k): return np.mean([s[prio][k] for s in splits])
 
-    print("\n=== 평균 (집계) ===")
-    print(f"throughput:        {avg('throughput'):.1f}")
-    print(f"deadlocks:         {avg('deadlocks'):.1f}   ({per1k('deadlocks'):.2f} / 1000스텝)")
-    print(f"replans:           {avg('replans'):.1f}   ({per1k('replans'):.2f} / 1000스텝)")
-    print(f"aborts:            {avg('aborts'):.1f}   ({per1k('aborts'):.2f} / 1000스텝)")
-    print(f"utilization:       {avg('utilization'):.1f}%")
-    print(f"avg_queue_time:    {avg('avg_queue_time'):.1f}")
-    print(f"avg_travel_time:   {avg('avg_travel_time'):.1f}")
+    # transport-layer 1차 지표 (problem-reframe: fab 처리량 아님, AMR 운영 효율).
+    # deadlock_per_1k 등 정규화 값은 get_kpi()가 실제 스텝수 기준으로 계산(에피소드 조기종료 무관).
+    print("\n=== transport-layer 1차 지표 (평균) ===")
+    print(f"① 강건성   deadlock/1k:   {avg('deadlock_per_1k'):.3f}   "
+          f"(데드락 {avg('deadlocks'):.1f}건)")
+    print(f"           혼잡 replans:   {avg('replans'):.1f}  aborts: {avg('aborts'):.1f}  "
+          f"(합 {avg('replans')+avg('aborts'):.1f})")
+    print(f"② fleet효율 이동거리/완료: {avg('dist_per_done'):.1f} 셀   "
+          f"(누적 {avg('total_travel_dist'):.0f} 셀, 에너지 프록시)")
+    print(f"           utilization:    {avg('utilization'):.1f}%")
+    print(f"③ HOT SLA  충족률(≤{HOT_SLA_STEPS}step): {avg('hot_sla_rate')*100:.1f}%")
+    print(f"--- 서비스 베이스라인 ---")
+    print(f"throughput:        {avg('throughput'):.1f}  "
+          f"(HOT {avg('hot_done'):.0f} / NORMAL {avg('normal_done'):.0f})")
+    print(f"avg_queue_time:    {avg('avg_queue_time'):.1f}   avg_travel_time: {avg('avg_travel_time'):.1f}")
 
     print("\n=== HOT / NORMAL 분리 (FA 우선순위 설계 검증) ===")
     print(f"{'priority':<10}{'완료':>8}{'큐대기(평균)':>14}{'큐대기 p95':>12}{'이동시간':>12}{'미완료대기':>12}")
@@ -187,7 +222,7 @@ def main():
 
     if args.closed_loop:
         fk = lambda k: np.mean([i.get(k, 0) for i in infos])
-        print("\n=== fab 일정 준수 (closed-loop, WIP 임계비 CR) ===")
+        print("\n=== [보조] fab 일정 준수 (closed-loop, WIP CR) — 디커플, 1차 지표 아님 ===")
         print(f"WIP lot:          {fk('fab_wip_lots'):.0f}   (완료 {fk('fab_done_lots'):.0f})")
         print(f"평균 CR:          {fk('fab_cr_mean'):.3f}   (HOT {fk('fab_hot_cr_mean'):.3f})   ※높을수록 일정 여유")
         print(f"납기 뒤처짐(CR<1): {fk('fab_behind_rate'):.1f}%   (HOT {fk('fab_hot_behind_rate'):.1f}%)")
