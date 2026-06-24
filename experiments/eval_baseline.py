@@ -36,14 +36,25 @@ DATASET_DIR = str(Path(__file__).parents[1] / "external" / "PySCFabSim" / "datas
 RAIL_GRID   = Path(__file__).parents[1] / "rware_simulator" / "output" / "rail_grid.npy"
 
 
-def make_coupled(n_amrs, max_steps, seed, flow_aware, early_replan, oht=False,
-                 closed_loop=False):
+def resolve_strategy(name):
+    """전략 inner env 클래스 해결 — 공유 도구가 로컬 전략에 *하드 의존* 안 하도록.
+
+    base → None (공유 FabAMREnv, 누구나 사용 가능)
+    fa   → 로컬 전용 FlowAwareFabEnv (없으면 명확히 안내). 팀원 환경엔 fa 없음.
+    """
+    if name == "fa":
+        try:
+            from mcs.dispatcher.strategies.fa import FlowAwareFabEnv
+            return FlowAwareFabEnv
+        except ImportError:
+            raise SystemExit("❌ --strategy fa: FA 전략 코드는 로컬 전용이라 없음. "
+                             "기본 env로 평가하려면 옵션 생략(=base).")
+    return None
+
+
+def make_coupled(n_amrs, max_steps, seed, inner_env_cls=None, early_replan=True,
+                 oht=False, closed_loop=False):
     grid_map = np.load(RAIL_GRID) if oht else None   # OHT=레일 그리드, AMR=기본 floor
-    inner_env_cls = None
-    if flow_aware:
-        # 평가 스크립트가 합성 루트(composition root): 전략 env를 여기서 주입한다.
-        from mcs.dispatcher.strategies.fa import FlowAwareFabEnv
-        inner_env_cls = FlowAwareFabEnv
     env = CoupledFabEnv(
         grid_map=grid_map,
         dataset_dir=DATASET_DIR, n_amrs=n_amrs,
@@ -152,6 +163,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", help="평가할 MaskablePPO .zip (미지정 시 --heuristic 필요)")
     ap.add_argument("--heuristic", action="store_true", help="휴리스틱 디스패처 (모델 불필요)")
+    ap.add_argument("--strategy", choices=["base", "fa"], default="base",
+                    help="모델 평가용 inner env: base(공유 FabAMREnv) / fa(로컬 전용)")
     ap.add_argument("--dispatch", choices=["nearest", "cost"], default="nearest",
                     help="휴리스틱 배정: nearest(기하거리) / cost(거리+혼잡, 똑똑한 nearest)")
     ap.add_argument("--n-amrs", type=int, default=20)
@@ -178,10 +191,12 @@ def main():
     print(f"n_amrs={args.n_amrs} | 에피소드={args.episodes} | max_steps={args.max_steps:,} "
           f"(≈{args.max_steps*1.33/3600:.1f}h fab) | early_replan={'ON' if early else 'OFF'}\n")
 
+    # 휴리스틱은 inner env 무관(sim 직접) → base. 모델은 --strategy로 결정(기본 base).
+    strategy_cls = None if args.heuristic else resolve_strategy(args.strategy)
     infos, splits, model = [], [], None
     for ep in range(args.episodes):
         env = make_coupled(args.n_amrs, args.max_steps, args.seed + ep,
-                           flow_aware=not args.heuristic, early_replan=early, oht=args.oht,
+                           inner_env_cls=strategy_cls, early_replan=early, oht=args.oht,
                            closed_loop=args.closed_loop)
         if args.heuristic:
             info = run_heuristic_episode(env, dispatch=args.dispatch)
