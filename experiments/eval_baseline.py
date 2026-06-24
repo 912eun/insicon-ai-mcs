@@ -106,18 +106,22 @@ def run_heuristic_episode(env, dispatch="nearest"):
             return info
 
 
-def run_model_episode(vec, env, model):
-    # DummyVecEnv는 done 시 자동 reset → completed_requests가 비워진다.
-    # 따라서 split은 step 직전(리셋 전) sim 상태에서 스냅샷해 둔다.
-    obs = vec.reset()
-    last_split = split_kpi(env._inner.sim)
-    while True:
-        masks = vec.env_method("action_masks")[0]
+def run_model_episode(env, model):
+    """모델을 raw env로 직접 실행 (DummyVecEnv 미사용).
+
+    버그 수정(2026-06-24): DummyVecEnv는 done 시 자동 reset → sim.completed_requests가
+    비워져 마지막 step의 완료 요청이 split 통계에서 누락됐다(Bug A). 또 에피소드마다
+    vec를 새로 만들어 model이 ep0 vec에 영구 바인딩·누수(Bug B). raw env 직접 실행으로
+    auto-reset이 없어져 둘 다 해소 — split은 호출부에서 에피소드 종료 후 직접 읽는다.
+    """
+    obs = env.reset()
+    done = False
+    info = {}
+    while not done:
+        masks = env.action_masks()
         action, _ = model.predict(obs, action_masks=masks, deterministic=True)
-        obs, _, done, info = vec.step(action)
-        if done[0]:
-            return info[0], last_split
-        last_split = split_kpi(env._inner.sim)
+        obs, _, done, info = env.step(int(action))
+    return info
 
 
 def split_kpi(sim):
@@ -181,12 +185,12 @@ def main():
                            closed_loop=args.closed_loop)
         if args.heuristic:
             info = run_heuristic_episode(env, dispatch=args.dispatch)
-            split = split_kpi(env._inner.sim)   # 휴리스틱은 auto-reset 없음 → 직접 읽어도 안전
         else:
-            vec = DummyVecEnv([lambda e=env: Monitor(e)])
             if model is None:
-                model = load_policy_only(args.model, vec)
-            info, split = run_model_episode(vec, env, model)
+                model = load_policy_only(args.model, env)
+            info = run_model_episode(env, model)
+        # auto-reset 없는 raw env → 에피소드 종료 후 sim에서 split 직접 읽기 (휴리스틱·모델 공통)
+        split = split_kpi(env._inner.sim)
         infos.append(info)
         splits.append(split)
         print(f"  ep{ep}: throughput={info['throughput']:>5} "
