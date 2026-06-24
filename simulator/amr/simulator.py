@@ -29,7 +29,8 @@ DEC_MMS2         = 3000.0   # mm/s² (감속도, 가속보다 빠름)
 # 픽업/드롭오프 작업 시간 기본값: 각 10초 ≈ 8스텝
 DEFAULT_LOAD_STEPS   = 8
 DEFAULT_UNLOAD_STEPS = 8
-DEADLOCK_THRESHOLD   = 30
+DEADLOCK_THRESHOLD   = 30   # 이만큼 제자리 = "진짜 교착" (KPI 카운트)
+REPLAN_STUCK         = 5    # 이만큼 막히면 낡은 예약 풀고 조기 재경로 (cascade 차단)
 
 
 class AMRStatus(Enum):
@@ -60,6 +61,8 @@ class _Request:
         self.assigned_at: Optional[int] = None
         self.done_at:     Optional[int] = None
         self.amr_id:      Optional[int] = None
+        # 반송 완료 시 호출되는 콜백 (closed-loop 반송용 — PySCFabSim lot release).
+        self.on_complete = None
 
     def waiting_time(self, current_step: int) -> int:
         return current_step - self.created_at if self.created_at is not None else 0
@@ -284,6 +287,12 @@ class FABSimulator:
         self.total_queue_time  = 0   # 큐 대기 시간 합계
         self.total_travel_time = 0   # 이동 시간 합계
         self.deadlock_count   = 0
+        self.replan_count     = 0   # 조기 재경로 발동 횟수 (진단용)
+        self.abort_count      = 0   # 재경로 실패 → 요청 반환 횟수 (진단용)
+        # 조기 재경로(A안) 토글. False면 기존 동작(30스텝 교착에서만 replan).
+        # ablation / 수정 전·후 비교용.
+        self.early_replan     = True
+        self.total_busy_steps  = 0   # 에피소드 전체 non-idle AMR 누적 (평균 utilization용)
         self.reservation      = ReservationTable()
 
         self.amrs: list[AMR]          = []
@@ -299,6 +308,9 @@ class FABSimulator:
         self.total_queue_time  = 0
         self.total_travel_time = 0
         self.deadlock_count    = 0
+        self.replan_count      = 0
+        self.abort_count       = 0
+        self.total_busy_steps  = 0
         self.reservation.clear()
         _Request._counter = 0
 
@@ -330,19 +342,28 @@ class FABSimulator:
         priority = Priority.HOT if random.random() < hot_prob else Priority.NORMAL
         self._enqueue(from_port, to_port, priority)
 
-    def _enqueue(self, from_port: str, to_port: str, priority: Priority):
+    def _enqueue(self, from_port: str, to_port: str, priority: Priority,
+                 on_complete=None):
         req            = _Request(from_port, to_port, priority)
         req.created_at = self.current_step
+        req.on_complete = on_complete
         heapq.heappush(self.request_queue, (priority.value, req.id, req))
+        return req
 
-    def add_request(self, from_port: str, to_port: str, priority: str = "NORMAL"):
-        """외부 반송 요청 주입 (PySCFabSim 이벤트 훅)."""
+    def add_request(self, from_port: str, to_port: str, priority: str = "NORMAL",
+                    on_complete=None):
+        """외부 반송 요청 주입 (PySCFabSim 이벤트 훅).
+
+        on_complete: 배송 완료 시 호출될 콜백(req를 인자로). closed-loop에서
+                     PySCFabSim의 lot을 다음 장비에 release하는 데 쓴다.
+        반환: 생성된 _Request, 포트 미해결 시 None.
+        """
         from_port = self._resolve_port(from_port)
         to_port   = self._resolve_port(to_port)
         if from_port is None or to_port is None or from_port == to_port:
-            return
+            return None
         p = Priority.HOT if priority.upper() == "HOT" else Priority.NORMAL
-        self._enqueue(from_port, to_port, p)
+        return self._enqueue(from_port, to_port, p, on_complete)
 
     def _resolve_port(self, name: str) -> Optional[str]:
         """
@@ -474,6 +495,9 @@ class FABSimulator:
                     self.total_travel_time += req.travel_time or 0
                     self.total_completed   += 1
                     self.completed_requests.append(req)
+                    # closed-loop: 배송 완료 → PySCFabSim lot release
+                    if req.on_complete is not None:
+                        req.on_complete(req)
                 self.reservation.release(amr.id)
                 amr.reset_idle()
 
@@ -483,6 +507,12 @@ class FABSimulator:
 
         if self.auto_dispatch:
             self._auto_dispatch()
+
+        # 에피소드 전체 평균 utilization을 위한 누적
+        self.total_busy_steps += sum(
+            1 for a in self.amrs
+            if a.status in (AMRStatus.MOVING, AMRStatus.LOADING, AMRStatus.UNLOADING)
+        )
 
         return self.get_state()
 
@@ -533,9 +563,16 @@ class FABSimulator:
                 if amr.position == amr._prev_pos:
                     amr._stuck_steps += 1
                     if amr._stuck_steps >= DEADLOCK_THRESHOLD:
+                        # 조기 재경로로도 못 풀린 진짜 교착
                         self.deadlock_count += 1
                         self._replan(amr)
                         amr._stuck_steps = 0
+                    elif self.early_replan and amr._stuck_steps % REPLAN_STUCK == 0:
+                        # 짧게 막힘 → 낡은(시간축 어긋난) 예약을 풀고 현재 위치 기준
+                        # 재경로. 지연 AMR이 stale 예약으로 다른 AMR을 막는 cascade를 차단.
+                        # stuck 카운터는 유지 → 재경로가 계속 실패하면 30에서 교착 감지.
+                        self.replan_count += 1
+                        self._replan(amr)
                 else:
                     amr._stuck_steps = 0
 
@@ -581,6 +618,7 @@ class FABSimulator:
 
     def _abort_amr(self, amr: AMR):
         """재경로 실패 시 요청을 큐에 돌려보내고 AMR을 idle로."""
+        self.abort_count += 1
         if amr.request is not None:
             req = amr.request
             heapq.heappush(self.request_queue, (req.priority.value, req.id, req))
@@ -609,11 +647,9 @@ class FABSimulator:
         n = self.total_completed
         avg_queue  = round(self.total_queue_time  / n, 2) if n > 0 else 0
         avg_travel = round(self.total_travel_time / n, 2) if n > 0 else 0
-        utilization = (
-            sum(1 for a in self.amrs
-                if a.status in (AMRStatus.MOVING, AMRStatus.LOADING, AMRStatus.UNLOADING))
-            / self.n_amrs * 100
-        )
+        # 에피소드 전체 평균 utilization (스냅샷 아닌 누적 평균)
+        total_amr_steps = self.n_amrs * max(self.current_step, 1)
+        utilization = round(self.total_busy_steps / total_amr_steps * 100, 2)
         return {
             "step":         self.current_step,
             "throughput":   self.total_completed,
@@ -623,6 +659,8 @@ class FABSimulator:
             "utilization":  round(utilization, 2),
             "pending":      len(self.request_queue),
             "deadlocks":    self.deadlock_count,
+            "replans":      self.replan_count,
+            "aborts":       self.abort_count,
             "reward":       round(self.get_reward(), 2),
         }
 
