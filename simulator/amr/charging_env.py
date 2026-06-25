@@ -21,6 +21,7 @@ Reward (Light shaping — Bischoff: Basic 붕괴·Light 최고):
 """
 
 import json
+import random
 from pathlib import Path
 from typing import Optional
 
@@ -60,8 +61,18 @@ class ChargingFabEnv(gym.Env):
         coupled: bool = False,            # True → 합성요청 대신 SMT2020 실공정 주입
         dataset_dir: Optional[str] = None,
         sim_days: float = 30.0,
+        w_block: float = 0.0,             # 혼잡(blocking) 패널티 — judge 정렬(충전이동 혼잡 억제)
+        w_dl: float = 0.0,                # 데드락 패널티
+        w_sla: float = 0.0,               # HOT SLA 위반 완료 패널티
+        warmup_max: int = 0,              # >0 → 에피소드마다 랜덤 T(0~warmup_max)로 warm-start
+        routing: str = "reservation",     # reservation | congestion | diversify(중앙쏠림 분산)
+        w_cong_route: float = 2.0,
+        n_chargers: int = 3,
+        charger_slots: int = 1,           # 충전소당 동시충전 슬롯 — death-spiral 방지 핵심
     ):
         super().__init__()
+        self.w_block, self.w_dl, self.w_sla = w_block, w_dl, w_sla
+        self.warmup_max = warmup_max
         if grid_map is None:
             grid_map = np.load(DEFAULT_GRID)
         if port_locations is None:
@@ -85,6 +96,8 @@ class ChargingFabEnv(gym.Env):
             battery_enabled=True,
             charge_policy="external",     # 내부 휴리스틱 충전 off → RL이 충전 통제
             battery_scale=battery_scale,
+            routing=routing, w_cong_route=w_cong_route,
+            n_chargers=n_chargers, charger_slots=charger_slots,
         )
         self.max_steps = max_steps
         self._n_amrs   = n_amrs
@@ -100,6 +113,9 @@ class ChargingFabEnv(gym.Env):
         self._last_ctx     = (0, 0.0)   # (n_pending, soc) — shaping 맥락
         self._prev_done = self._prev_dep = 0
         self._prev_drain = 0.0
+        self._prev_block = self._prev_dl = self._prev_hot_done = self._prev_hot_sla = 0
+        self._seed = seed              # 결정론 재seed 기준 (noise 제거)
+        self._episode = 0
 
     # ── coupled(실공정) 헬퍼 ──────────────────────────────
     def _setup_coupled(self, dataset_dir):
@@ -133,14 +149,21 @@ class ChargingFabEnv(gym.Env):
 
     # ── gym API ───────────────────────────────────────────
     def reset(self):
+        # 에피소드별 결정론 재seed: 같은 (env seed, 에피소드)면 같은 수요 →
+        # 정책 간 paired 비교 + run-to-run 재현. 학습은 에피소드마다 다른 수요(다양성).
+        ep_seed = self._seed + self._episode
+        random.seed(ep_seed)
+        np.random.seed(ep_seed)
+        self._episode += 1
+
         self.sim.reset()
         self._decided.clear()
-        self._prev_done = self._prev_dep = 0
-        self._prev_drain = 0.0
         if self.coupled:
             if self._fab_files is None:        # 피클 후 lazy 로드
                 from simulation.read import read_all
                 self._fab_files = read_all(self.dataset_dir)
+            from simulation.randomizer import Randomizer
+            Randomizer().random.seed(ep_seed)  # PySCFabSim 공정 RNG 결정론화 (process time·샘플링)
             from simulation.file_instance import FileInstance
             from simulator.fab_process.smat2022.transport_hook import AMRTransportHook
             self.sim.request_queue = []        # 공정 주입 전 큐 비움
@@ -149,8 +172,40 @@ class ChargingFabEnv(gym.Env):
                                          lot_for_machine=True, plugins=[self._hook])
             self._pyscfab.external_transport = False
             self._fab_time = 0.0
+
+        # warm-start: 매 에피소드 랜덤 T로 점프 → cold-start(t=0 빈 공장) 편향 제거.
+        # ep_seed로 seed돼 있어 (seed,에피소드)당 결정론 → 정책 간 paired 비교 유지.
+        if self.warmup_max > 0:
+            self._warmup(random.randint(0, self.warmup_max))
+
+        # reward 누적 카운터를 warm 상태 기준으로 초기화 (warmup 구간은 보상에서 제외).
+        self._prev_done  = self.sim.total_completed
+        self._prev_dep   = self.sim.depleted_count
+        self._prev_drain = self.sim.total_drain_frac
+        self._prev_block = self.sim.blocking_count
+        self._prev_dl    = self.sim.deadlock_count
+        self._prev_hot_done = self.sim.completed_by_pri[Priority.HOT]
+        self._prev_hot_sla  = self.sim.hot_sla_met
+
         obs, _ = self._advance_to_decision()
         return obs
+
+    def _warmup(self, target_step):
+        """기본 휴리스틱(저soc&충전소여유→충전, 아니면 서빙)으로 target_step까지 진행.
+        에피소드를 빈 공장이 아닌 '운영 중' 상태에서 시작하게 함 (랜덤 운영점)."""
+        target = min(target_step, self.max_steps - 1)
+        while self.sim.current_step < target:
+            amr = self._pick_decision_amr()
+            if amr is not None:
+                self._decided.add(amr.id)
+                m = self._mask_for(amr)
+                self._apply(amr, 1 if (m[1] and amr.soc < SOC_LOW) else 0)
+            else:
+                if self.coupled:
+                    self._advance_fab(self._fab_time + self._fab_step_sec)
+                    self._fab_time += self._fab_step_sec
+                self.sim.step()
+                self._decided.clear()
 
     def __getstate__(self):
         s = self.__dict__.copy()
@@ -224,7 +279,7 @@ class ChargingFabEnv(gym.Env):
         충전은 배터리 여유(<0.99) & 충전소 빈 슬롯 있을 때만(만석엔 못 감)."""
         if a is None:
             return np.array([True, False])
-        charger_free = any(len(occ) < CHARGER_SLOTS
+        charger_free = any(len(occ) < self.sim.charger_slots
                            for occ in self.sim.charger_occ.values())
         charge_ok = (a.soc < 0.99) and charger_free
         return np.array([True, charge_ok])
@@ -244,6 +299,17 @@ class ChargingFabEnv(gym.Env):
 
         r = self.W_DONE * d_done - self.W_DEPLETE * d_dep - self.W_ENERGY * d_eng
 
+        # judge 정렬 항 (혼잡·SLA) — 충전 이동이 유발하는 혼잡/SLA 손실 억제.
+        # 가중치 0(기본)이면 비활성 = 기존 Light reward 그대로.
+        d_block = self.sim.blocking_count - self._prev_block
+        d_dl    = self.sim.deadlock_count - self._prev_dl
+        hot_done = self.sim.completed_by_pri[Priority.HOT]
+        d_hot_over = (hot_done - self._prev_hot_done) \
+                     - (self.sim.hot_sla_met - self._prev_hot_sla)   # 이번 step HOT SLA 위반 완료
+        self._prev_block, self._prev_dl = self.sim.blocking_count, self.sim.deadlock_count
+        self._prev_hot_done, self._prev_hot_sla = hot_done, self.sim.hot_sla_met
+        r -= self.w_block * d_block + self.w_dl * d_dl + self.w_sla * d_hot_over
+
         # light 충전맥락 shaping: 충전했을 때만
         if self._last_action == 1:
             n_pend, soc = self._last_ctx
@@ -260,9 +326,9 @@ class ChargingFabEnv(gym.Env):
         # 가까운 충전소 거리·여유
         if self.sim.chargers:
             dmin = min(abs(a.x - cx) + abs(a.y - cy) for cx, cy in self.sim.chargers)
-            free = sum(max(CHARGER_SLOTS - len(occ), 0)
+            free = sum(max(self.sim.charger_slots - len(occ), 0)
                        for occ in self.sim.charger_occ.values())
-            free_frac = free / (CHARGER_SLOTS * len(self.sim.chargers))
+            free_frac = free / (self.sim.charger_slots * len(self.sim.chargers))
         else:
             dmin, free_frac = W + H, 1.0
         n_pend = len(self.sim.request_queue)
