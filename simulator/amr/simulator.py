@@ -301,8 +301,10 @@ class FABSimulator:
         battery_enabled: bool = False,
         charge_policy: str = "threshold",   # threshold | opportunity | highlow (휴리스틱 baseline)
         battery_scale: float = 1.0,         # drain·charge 가속 배수 = 유효용량 1/scale (용량 sweep 축/dev 단축키)
-        routing: str = "reservation",       # reservation(예약A*) | congestion(혼잡가중A*) — 라우팅 헤드룸 측정용
+        routing: str = "reservation",       # reservation(예약A*) | congestion | diversify
         w_cong_route: float = 2.0,          # 혼잡가중 셀 패널티 (routing=congestion일 때)
+        n_chargers: int = N_CHARGERS,       # 충전소 개수 (앵커 ≤3) — capacity 축
+        charger_slots: int = CHARGER_SLOTS, # 충전소당 동시충전 슬롯 — death-spiral 방지 핵심 축
     ):
         random.seed(seed)
         self.grid_map         = grid_map
@@ -355,6 +357,8 @@ class FABSimulator:
         self.battery_scale    = battery_scale
         self.routing          = routing
         self.w_cong_route     = w_cong_route
+        self.n_chargers       = n_chargers
+        self.charger_slots    = charger_slots
         self._density_cache   = None
         self._density_step    = -1
         # step당 SoC 환산 (Bischoff Ah/h → 1 step=STEP_SEC초) × battery_scale(유효용량 1/scale)
@@ -426,7 +430,7 @@ class FABSimulator:
         """충전소 N_CHARGERS개를 구역 균형 앵커에 가장 가까운 walkable 포트셀로 배치."""
         W, H = self._grid_w, self._grid_h
         anchors = [(W * 0.25, H * 0.30), (W * 0.75, H * 0.30), (W * 0.50, H * 0.75)]
-        anchors = anchors[:N_CHARGERS]
+        anchors = anchors[:self.n_chargers]
         cells = []
         for ax, ay in anchors:
             best = min(self.port_names,
@@ -541,12 +545,30 @@ class FABSimulator:
         self._density_step  = self.current_step
         return blur
 
-    def _find_path(self, start, goal, t):
-        """routing 모드에 따라 예약A* 또는 혼잡가중A*."""
-        density = self._density_grid() if self.routing == "congestion" else None
+    def _jitter_field(self, amr_id: int):
+        """AMR별 *정적* 랜덤 비용필드 (한 번 생성·캐시 = 재계산 없음, congestion과 달리 빠름).
+        AMR마다 다른 필드 → 평행 통로를 서로 다르게 선호 → 중앙 쏠림 분산(deadlock↓)."""
+        cache = getattr(self, "_jitter_cache", None)
+        if cache is None:
+            cache = self._jitter_cache = {}
+        f = cache.get(amr_id)
+        if f is None:
+            rng = np.random.RandomState(1000 + amr_id)   # AMR별 고정 → 결정론
+            f = rng.rand(self._grid_h, self._grid_w).astype(np.float32)
+            cache[amr_id] = f
+        return f
+
+    def _find_path(self, start, goal, t, amr=None):
+        """routing 모드에 따라 예약A* / 혼잡가중A* / 경로다양화(diversify)."""
+        if self.routing == "congestion":
+            density, w = self._density_grid(), self.w_cong_route
+        elif self.routing == "diversify" and amr is not None:
+            density, w = self._jitter_field(amr.id), self.w_cong_route
+        else:
+            density, w = None, 0.0
         return astar_with_reservation(
             self.grid_map, start, goal, self.reservation, time_offset=t,
-            density=density, w_cong=self.w_cong_route,
+            density=density, w_cong=w,
         )
 
     def dispatch(self, amr_id: int, request_id: Optional[int] = None) -> bool:
@@ -580,13 +602,13 @@ class FABSimulator:
         goal   = (to_p["grid_x"],   to_p["grid_y"])
 
         t0 = self.current_step
-        path_to_pickup = self._find_path(amr.position, pickup, t0)
+        path_to_pickup = self._find_path(amr.position, pickup, t0, amr)
         if path_to_pickup is None:
             heapq.heappush(self.request_queue, (req.priority.value, req.id, req))
             return False
 
         t1 = t0 + len(path_to_pickup) - 1
-        path_to_goal = self._find_path(pickup, goal, t1)
+        path_to_goal = self._find_path(pickup, goal, t1, amr)
         if path_to_goal is None:
             heapq.heappush(self.request_queue, (req.priority.value, req.id, req))
             return False
@@ -771,7 +793,7 @@ class FABSimulator:
             return
 
         goal     = (goal_info["grid_x"], goal_info["grid_y"])
-        new_path = self._find_path(amr.position, goal, self.current_step)
+        new_path = self._find_path(amr.position, goal, self.current_step, amr)
         if new_path is None:
             self._abort_amr(amr)
         else:
@@ -807,14 +829,14 @@ class FABSimulator:
     def _send_to_charge(self, amr: AMR) -> bool:
         """여유 슬롯 있는 가장 가까운 충전소로 amr을 보냄. 슬롯은 출발 시 점유(여행+충전 동안 유지)."""
         free = [i for i in range(len(self.chargers))
-                if len(self.charger_occ[i]) < CHARGER_SLOTS]
+                if len(self.charger_occ[i]) < self.charger_slots]
         if not free:
             return False   # 모든 충전소 만석 → 지금은 충전 불가 (contention)
         # 거리순으로 가까운 충전소부터 경로 시도
         free.sort(key=lambda i: abs(self.chargers[i][0] - amr.x)
                               + abs(self.chargers[i][1] - amr.y))
         for i in free:
-            path = self._find_path(amr.position, self.chargers[i], self.current_step)
+            path = self._find_path(amr.position, self.chargers[i], self.current_step, amr)
             if path is None:
                 continue
             self.reservation.reserve(path, amr.id, time_offset=self.current_step)
