@@ -21,8 +21,12 @@ SOC_LOW = 0.20
 
 
 def run(n_amrs, max_steps, seed, battery_scale):
+    # feasible 운영점 고정: lanes 차선제 + 충전소 3x3 + nearest 디스패치 (train/eval과 동일)
     env = ChargingFabEnv(n_amrs=n_amrs, max_steps=max_steps, seed=seed,
-                         battery_scale=battery_scale, coupled=True)
+                         battery_scale=battery_scale, coupled=True,
+                         routing="lanes", w_cong_route=1.0,
+                         n_chargers=3, charger_slots=3,
+                         dispatch_policy="nearest")
     obs = env.reset()
     q_traj, marks = [], {int(max_steps * f) for f in (0.25, 0.5, 0.75)}
     q_at = {}
@@ -44,7 +48,7 @@ def main():
     ap.add_argument("--battery-scale", type=float, default=3.0)
     ap.add_argument("--max-steps", type=int, default=30000)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--fleets", type=int, nargs="+", default=[6, 10, 14, 20, 28])
+    ap.add_argument("--fleets", type=int, nargs="+", default=[20, 30, 40, 50, 60])
     args = ap.parse_args()
 
     print(f"=== Fleet-sizing 프로브 (coupled 실수요) | bs={args.battery_scale} "
