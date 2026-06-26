@@ -40,6 +40,20 @@ from experiments.eval_baseline import transport_score   # 단일 공유 Judge (�
 
 HEURISTICS = ["threshold", "opportunity", "highlow"]
 
+# feasible 운영점 (train_charging와 동일) — 평가-학습 불일치 방지
+OP = dict(routing="lanes", w_cong_route=1.0, n_chargers=3, charger_slots=3,
+          dispatch_policy="nearest")
+
+
+def _vecnorm_for(model_path: str) -> str:
+    """모델 경로에서 vecnorm .pkl 경로 도출. '_model.zip' 없는 커스텀 경로도 안전하게 .pkl로.
+    (이전: str.replace가 그대로 반환 → zip을 pickle 로드하다 크래시)"""
+    if model_path.endswith("_model.zip"):
+        return model_path[:-len("_model.zip")] + "_vecnorm.pkl"
+    if model_path.endswith(".zip"):
+        return model_path[:-len(".zip")] + "_vecnorm.pkl"
+    return model_path + "_vecnorm.pkl"
+
 
 def _load_grid_ports():
     grid = np.load(DEFAULT_GRID)
@@ -56,6 +70,7 @@ def run_heuristic(policy, n_amrs, max_steps, seed, battery_scale, request_interv
         request_interval=request_interval, seed=seed,
         auto_dispatch=True, battery_enabled=True,
         charge_policy=policy, battery_scale=battery_scale,
+        **OP,
     )
     sim.reset()
     while sim.current_step < max_steps:
@@ -67,7 +82,7 @@ def run_rl(model_path, vecnorm_path, n_amrs, max_steps, seed, battery_scale):
     """ChargingFabEnv + 학습 모델(obs 정규화 포함) → KPI."""
     def _init():
         return ChargingFabEnv(n_amrs=n_amrs, max_steps=max_steps, seed=seed,
-                              battery_scale=battery_scale)
+                              battery_scale=battery_scale, **OP)
     vec = DummyVecEnv([_init])
     vec = VecNormalize.load(vecnorm_path, vec)
     vec.training = False
@@ -126,7 +141,7 @@ def main():
         cand = (Path(__file__).parent / "charging"
                 / f"charging_n{args.n_amrs}_bs{args.battery_scale:g}_seed42_model.zip")
         model_path = str(cand) if cand.exists() else None
-    vecnorm_path = model_path.replace("_model.zip", "_vecnorm.pkl") if model_path else None
+    vecnorm_path = _vecnorm_for(model_path) if model_path else None
     have_rl = bool(model_path and Path(model_path).exists()
                    and vecnorm_path and Path(vecnorm_path).exists())
 
