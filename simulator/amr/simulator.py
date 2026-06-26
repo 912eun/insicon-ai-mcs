@@ -305,6 +305,7 @@ class FABSimulator:
         w_cong_route: float = 2.0,          # 혼잡가중 셀 패널티 (routing=congestion일 때)
         n_chargers: int = N_CHARGERS,       # 충전소 개수 (앵커 ≤3) — capacity 축
         charger_slots: int = CHARGER_SLOTS, # 충전소당 동시충전 슬롯 — death-spiral 방지 핵심 축
+        dispatch_policy: str = "fifo",      # fifo(최우선 요청 pop) | nearest(최우선 tier 중 픽업 최단)
     ):
         random.seed(seed)
         self.grid_map         = grid_map
@@ -359,6 +360,7 @@ class FABSimulator:
         self.w_cong_route     = w_cong_route
         self.n_chargers       = n_chargers
         self.charger_slots    = charger_slots
+        self.dispatch_policy  = dispatch_policy   # fifo | nearest (request_id 미지정 dispatch 시 요청 선택 방식)
         self._density_cache   = None
         self._density_step    = -1
         # step당 SoC 환산 (Bischoff Ah/h → 1 step=STEP_SEC초) × battery_scale(유효용량 1/scale)
@@ -559,16 +561,17 @@ class FABSimulator:
         return f
 
     def _find_path(self, start, goal, t, amr=None):
-        """routing 모드에 따라 예약A* / 혼잡가중A* / 경로다양화(diversify)."""
+        """routing 모드: reservation / congestion / diversify / lanes(일방통행 차선제)."""
+        density, w, lane_w = None, 0.0, 0.0
         if self.routing == "congestion":
             density, w = self._density_grid(), self.w_cong_route
         elif self.routing == "diversify" and amr is not None:
             density, w = self._jitter_field(amr.id), self.w_cong_route
-        else:
-            density, w = None, 0.0
+        elif self.routing == "lanes":
+            lane_w = self.w_cong_route          # 차선 페널티 강도(재사용)
         return astar_with_reservation(
             self.grid_map, start, goal, self.reservation, time_offset=t,
-            density=density, w_cong=w,
+            density=density, w_cong=w, lane_w=lane_w,
         )
 
     def dispatch(self, amr_id: int, request_id: Optional[int] = None) -> bool:
@@ -582,7 +585,22 @@ class FABSimulator:
             return False
 
         if request_id is None:
-            _, _, req = heapq.heappop(self.request_queue)
+            if self.dispatch_policy == "nearest":
+                # 최우선 priority tier 안에서 픽업이 amr에 가장 가까운 요청 선택 (AMR-centric nearest).
+                # heap top = 최소 priority.value = 최고 우선순위. 같은 tier만 거리로 비교 → HOT 우선 유지.
+                top_pri = self.request_queue[0][0]
+                best_i, best_d = 0, None
+                for idx, (pri, _rid, r) in enumerate(self.request_queue):
+                    if pri != top_pri:
+                        continue
+                    fp = self.port_locations[r.from_port]
+                    d = abs(amr.x - fp["grid_x"]) + abs(amr.y - fp["grid_y"])
+                    if best_d is None or d < best_d:
+                        best_d, best_i = d, idx
+                req = self.request_queue.pop(best_i)[2]
+                heapq.heapify(self.request_queue)
+            else:
+                _, _, req = heapq.heappop(self.request_queue)
         else:
             req, temp = None, []
             while self.request_queue:

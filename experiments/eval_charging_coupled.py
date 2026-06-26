@@ -48,8 +48,12 @@ HEURISTICS = {"threshold": p_threshold, "opportunity": p_opportunity, "highlow":
 
 
 def make_env(n_amrs, max_steps, seed, battery_scale):
+    # feasible 운영점: lanes 차선제 + 충전소 3x3 + nearest 디스패치 (docs/feasibility_findings.md)
     return ChargingFabEnv(n_amrs=n_amrs, max_steps=max_steps, seed=seed,
-                          battery_scale=battery_scale, coupled=True)
+                          battery_scale=battery_scale, coupled=True,
+                          routing="lanes", w_cong_route=1.0,
+                          n_chargers=3, charger_slots=3,
+                          dispatch_policy="nearest")
 
 
 def run_scripted(policy, n_amrs, max_steps, seed, battery_scale):

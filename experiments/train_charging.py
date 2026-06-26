@@ -52,10 +52,16 @@ LR            = 3e-4        # scratch 표준 LR
 
 
 def _env_factory(n_amrs, max_steps, seed, battery_scale, coupled, rw):
-    """모듈 레벨 팩토리 — SubprocVecEnv 피클링 가능(중첩 클로저 불가). rw=(w_block,w_dl,w_sla)."""
+    """모듈 레벨 팩토리 — SubprocVecEnv 피클링 가능(중첩 클로저 불가). rw=(w_block,w_dl,w_sla).
+    feasible 운영점(lanes 차선제 + 충전소 3x3 + nearest 디스패치) 고정 — docs/feasibility_findings.md.
+    lanes: 일방통행 차선제로 blocking 20배↓·deadlock 0 (넓은 통로 미활용 문제 해결).
+    nearest: 통로 열린 lanes에서 fifo 대비 처리율 +46~78% (거리 무관 배정 손실 제거)."""
     return Monitor(ChargingFabEnv(n_amrs=n_amrs, max_steps=max_steps, seed=seed,
                                   battery_scale=battery_scale, coupled=coupled,
-                                  w_block=rw[0], w_dl=rw[1], w_sla=rw[2]))
+                                  w_block=rw[0], w_dl=rw[1], w_sla=rw[2],
+                                  routing="lanes", w_cong_route=1.0,
+                                  n_chargers=3, charger_slots=3,
+                                  dispatch_policy="nearest"))
 
 
 def make_env(n_amrs, max_steps, seed, battery_scale=1.0, coupled=False, rw=(0.0, 0.0, 0.0)):
