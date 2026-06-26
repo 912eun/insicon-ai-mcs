@@ -142,6 +142,7 @@ def astar_with_reservation(
     time_offset: int = 0,
     density: Optional[np.ndarray] = None,
     w_cong: float = 0.0,
+    lane_w: float = 0.0,
 ) -> Optional[list]:
     """
     Time-extended A* that avoids vertex/edge conflicts in the reservation table.
@@ -205,6 +206,13 @@ def astar_with_reservation(
             # 혼잡가중: 주변 AMR 밀도 높은 셀에 추가비용 → 막힌 구역째 우회 (Jang 동적가중 류)
             if density is not None and w_cong > 0.0:
                 new_g += w_cong * float(density[ny, nx])
+            # 차선제(일방통행): 셀 좌표 기반 선호방향과 반대로 가면 페널티 → 레인 형성.
+            #   가로이동: 행 짝수=동(+x) 선호 / 홀수=서. 세로이동: 열 짝수=남(+y) / 홀수=북.
+            if lane_w > 0.0:
+                if dx != 0 and ((cy % 2 == 0) != (dx > 0)):
+                    new_g += lane_w
+                if dy != 0 and ((cx % 2 == 0) != (dy > 0)):
+                    new_g += lane_w
             nb_state = (nx, ny, nt)
             if new_g < g_cost.get(nb_state, float("inf")):
                 g_cost[nb_state] = new_g

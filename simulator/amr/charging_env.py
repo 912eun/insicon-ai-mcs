@@ -69,6 +69,7 @@ class ChargingFabEnv(gym.Env):
         w_cong_route: float = 2.0,
         n_chargers: int = 3,
         charger_slots: int = 1,           # 충전소당 동시충전 슬롯 — death-spiral 방지 핵심
+        dispatch_policy: str = "fifo",    # fifo(최우선 요청) | nearest(최우선 tier 중 픽업 최단)
     ):
         super().__init__()
         self.w_block, self.w_dl, self.w_sla = w_block, w_dl, w_sla
@@ -98,6 +99,7 @@ class ChargingFabEnv(gym.Env):
             battery_scale=battery_scale,
             routing=routing, w_cong_route=w_cong_route,
             n_chargers=n_chargers, charger_slots=charger_slots,
+            dispatch_policy=dispatch_policy,
         )
         self.max_steps = max_steps
         self._n_amrs   = n_amrs
