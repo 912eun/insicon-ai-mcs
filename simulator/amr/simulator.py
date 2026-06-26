@@ -793,8 +793,33 @@ class FABSimulator:
 
             amr._prev_pos = amr.position
 
+    def _release_charger(self, amr: AMR):
+        """충전소 슬롯 반납 (재경로/abort로 충전 트립이 중단될 때 자원 누수 방지)."""
+        if amr._charger_idx >= 0:
+            self.charger_occ[amr._charger_idx].discard(amr.id)
+            amr._charger_idx = -1
+        amr.going_to_charge = False
+
     def _replan(self, amr: AMR):
         if amr.request is None:
+            # 충전 트립 재경로: 슬롯을 유지한 채 충전소로 다시 경로. 실패 시에만 슬롯 반납 후 idle.
+            # (이전: 무조건 idle 복귀 → charger_occ 누수로 슬롯 고갈 death-spiral 유발)
+            if amr.going_to_charge and amr._charger_idx >= 0:
+                charger = self.chargers[amr._charger_idx]
+                new_path = self._find_path(amr.position, charger, self.current_step, amr)
+                if new_path is not None:
+                    self.reservation.release(amr.id)
+                    self.reservation.reserve(new_path, amr.id, time_offset=self.current_step)
+                    amr.path        = new_path
+                    amr.path_idx    = 0
+                    amr.pickup_idx  = -1
+                    amr._step_costs = compute_step_costs(
+                        new_path, self.cell_mm, self.v_max_mms, self.acc_mms2, self.dec_mms2
+                    )
+                    amr._step_frac  = 0.0
+                    amr.status      = AMRStatus.MOVING
+                    return
+            self._release_charger(amr)
             self.reservation.release(amr.id)
             amr.reset_idle()
             return
@@ -834,6 +859,7 @@ class FABSimulator:
         if amr.request is not None:
             req = amr.request
             heapq.heappush(self.request_queue, (req.priority.value, req.id, req))
+        self._release_charger(amr)   # 충전 트립이 abort돼도 슬롯 누수 방지
         self.reservation.release(amr.id)
         amr.reset_idle()
 

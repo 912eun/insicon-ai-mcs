@@ -28,7 +28,8 @@ def run(n_amrs, max_steps, seed, battery_scale):
                          n_chargers=3, charger_slots=3,
                          dispatch_policy="nearest")
     obs = env.reset()
-    q_traj, marks = [], {int(max_steps * f) for f in (0.25, 0.5, 0.75)}
+    # 이벤트 트리거 sim은 current_step이 정확한 마크값을 건너뛰므로 '도달 시 1회' 기록(>=)으로 잡는다.
+    marks = sorted(int(max_steps * f) for f in (0.25, 0.5, 0.75))
     q_at = {}
     done = False
     while not done:
@@ -37,8 +38,9 @@ def run(n_amrs, max_steps, seed, battery_scale):
         a = 1 if (mask[1] and obs[0] < SOC_LOW) else 0
         obs, _, done, info = env.step(a)
         step = env.sim.current_step
-        if step in marks:
-            q_at[step] = len(env.sim.request_queue)
+        for mk in marks:
+            if step >= mk and mk not in q_at:
+                q_at[mk] = len(env.sim.request_queue)
     q_final = len(env.sim.request_queue)
     return info, q_at, q_final, max_steps
 
@@ -62,7 +64,8 @@ def main():
         q25 = q_at.get(int(ms * 0.25), 0)
         q50 = q_at.get(int(ms * 0.5), 0)
         q75 = q_at.get(int(ms * 0.75), 0)
-        trend = "↑과부하" if q_final > q75 * 1.15 else ("평탄" if q_final < q75 * 1.15 else "~")
+        # 절대 마진(+5)으로 q75=0 경계에서 안정적으로 '평탄' 판정 (이전: q_final==q75일 때 "~" 노출)
+        trend = "↑과부하" if q_final > q75 * 1.15 + 5 else "평탄"
         print(f"{n:>4}{q25:>8}{q50:>8}{q75:>8}{q_final:>8}{trend:>6}"
               f"{info.get('utilization', 0):>7.1f}{info.get('hot_sla_rate', 0):>8.3f}"
               f"{info.get('throughput', 0):>7.0f}{info.get('deadlock_per_1k', 0):>7.2f}"

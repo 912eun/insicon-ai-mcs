@@ -47,6 +47,9 @@ class FabAMREnv(gym.Env):
         v_max_mms: float = V_MAX_MMS,
         acc_mms2: float = ACC_MMS2,
         dec_mms2: float = DEC_MMS2,
+        routing: str = "reservation",       # reservation | congestion | diversify | lanes
+        w_cong_route: float = 2.0,
+        dispatch_policy: str = "fifo",      # nearest 베이스라인 비교용 (RL은 action으로 직접 배정)
     ):
         super().__init__()
 
@@ -67,6 +70,9 @@ class FabAMREnv(gym.Env):
             v_max_mms=v_max_mms,
             acc_mms2=acc_mms2,
             dec_mms2=dec_mms2,
+            routing=routing,
+            w_cong_route=w_cong_route,
+            dispatch_policy=dispatch_policy,
         )
         self.max_steps = max_steps
         self._n_amrs   = n_amrs
