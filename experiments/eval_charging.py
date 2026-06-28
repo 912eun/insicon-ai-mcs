@@ -62,7 +62,8 @@ def _load_grid_ports():
     return grid, ports
 
 
-def run_heuristic(policy, n_amrs, max_steps, seed, battery_scale, request_interval=15):
+def run_heuristic(policy, n_amrs, max_steps, seed, battery_scale, request_interval=15,
+                  routing="lanes", charger_slots=3, dispatch_policy="nearest"):
     """FABSimulator를 charge_policy=휴리스틱으로 자율 구동 → KPI."""
     grid, ports = _load_grid_ports()
     sim = FABSimulator(
@@ -70,7 +71,8 @@ def run_heuristic(policy, n_amrs, max_steps, seed, battery_scale, request_interv
         request_interval=request_interval, seed=seed,
         auto_dispatch=True, battery_enabled=True,
         charge_policy=policy, battery_scale=battery_scale,
-        **OP,
+        routing=routing, charger_slots=charger_slots,
+        dispatch_policy=dispatch_policy,
     )
     sim.reset()
     while sim.current_step < max_steps:
@@ -78,11 +80,14 @@ def run_heuristic(policy, n_amrs, max_steps, seed, battery_scale, request_interv
     return sim.get_kpi()
 
 
-def run_rl(model_path, vecnorm_path, n_amrs, max_steps, seed, battery_scale):
+def run_rl(model_path, vecnorm_path, n_amrs, max_steps, seed, battery_scale,
+           routing="lanes", charger_slots=3, dispatch_policy="nearest"):
     """ChargingFabEnv + 학습 모델(obs 정규화 포함) → KPI."""
     def _init():
         return ChargingFabEnv(n_amrs=n_amrs, max_steps=max_steps, seed=seed,
-                              battery_scale=battery_scale, **OP)
+                              battery_scale=battery_scale,
+                              routing=routing, charger_slots=charger_slots,
+                              dispatch_policy=dispatch_policy)
     vec = DummyVecEnv([_init])
     vec = VecNormalize.load(vecnorm_path, vec)
     vec.training = False
@@ -131,6 +136,12 @@ def main():
                     help="RL 모델 .zip (미지정 시 기본경로 자동탐색; 없으면 휴리스틱만)")
     ap.add_argument("--policies", default=",".join(HEURISTICS),
                     help="비교할 휴리스틱 (쉼표구분)")
+    ap.add_argument("--routing", default="lanes",
+                    help="라우팅 모드 (학습 설정과 맞춰야 함, 기본=lanes)")
+    ap.add_argument("--charger-slots", type=int, default=3,
+                    help="충전소당 슬롯 수 (학습 설정과 맞춰야 함, 기본=3)")
+    ap.add_argument("--dispatch-policy", default="nearest",
+                    help="dispatch 정책 (학습 설정과 맞춰야 함, 기본=nearest)")
     args = ap.parse_args()
 
     policies = [p.strip() for p in args.policies.split(",") if p.strip()]
@@ -152,13 +163,19 @@ def main():
     rows = []
     for pol in policies:
         infos = [run_heuristic(pol, args.n_amrs, args.max_steps, args.seed + ep,
-                               args.battery_scale)
+                               args.battery_scale,
+                               routing=args.routing,
+                               charger_slots=args.charger_slots,
+                               dispatch_policy=args.dispatch_policy)
                  for ep in range(args.episodes)]
         rows.append(summarize(pol, infos))
 
     if have_rl:
         infos = [run_rl(model_path, vecnorm_path, args.n_amrs, args.max_steps,
-                        args.seed + ep, args.battery_scale)
+                        args.seed + ep, args.battery_scale,
+                        routing=args.routing,
+                        charger_slots=args.charger_slots,
+                        dispatch_policy=args.dispatch_policy)
                  for ep in range(args.episodes)]
         rows.append(summarize("rl ★", infos))
 
