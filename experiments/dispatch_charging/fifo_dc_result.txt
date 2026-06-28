@@ -1,0 +1,12 @@
+======================================================================
+FIFO baseline — n_amrs × routing 비교 (coupled SMAT2022, bs=8)
+======================================================================
+   n     routing      score     tp   dep/1k   dl/1k   hot_sla   util%   charge%    wait%
+----------------------------------------------------------------------
+  running: n=30, routing=lanes, seed=100 ... tp=752
+  running: n=30, routing=lanes, seed=101 ... tp=758
+  30       lanes    -216.87  755.0    0.400   0.000     0.730    85.7      1.5%    98.5%
+  running: n=35, routing=lanes, seed=100 ... tp=879
+  running: n=35, routing=lanes, seed=101 ... tp=877
+  35       lanes    -202.22  878.0    0.600   0.000     0.803    84.1      1.0%    99.0%
+  running: n=30, routing=diversify, seed=100 ...

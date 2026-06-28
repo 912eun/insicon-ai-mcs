@@ -58,7 +58,7 @@ class ChargingFabEnv(gym.Env):
         max_steps: int = 5000,
         seed: int = 42,
         battery_scale: float = 1.0,
-        coupled: bool = False,            # True → 합성요청 대신 SMT2020 실공정 주입
+        coupled: bool = False,
         dataset_dir: Optional[str] = None,
         sim_days: float = 30.0,
         w_block: float = 0.0,             # 혼잡(blocking) 패널티 — judge 정렬(충전이동 혼잡 억제)
@@ -70,6 +70,7 @@ class ChargingFabEnv(gym.Env):
         n_chargers: int = 3,
         charger_slots: int = 1,           # 충전소당 동시충전 슬롯 — death-spiral 방지 핵심
         dispatch_policy: str = "fifo",    # fifo(최우선 요청) | nearest(최우선 tier 중 픽업 최단)
+        random_start: bool = False,
     ):
         super().__init__()
         self.w_block, self.w_dl, self.w_sla = w_block, w_dl, w_sla
@@ -83,6 +84,8 @@ class ChargingFabEnv(gym.Env):
         # ── coupled(실공정) 셋업 ──
         self.coupled       = coupled
         self.sim_days      = sim_days
+        self.random_start  = random_start
+        self._start_rng    = np.random.RandomState(seed)
         self._pyscfab = self._hook = self._fab_files = self._ptuple_fcn = None
         self._fab_time = 0.0
         self._fab_step_sec = None
@@ -149,6 +152,27 @@ class ChargingFabEnv(gym.Env):
                 else:
                     self._pyscfab.dispatch(m, lots)
 
+    def _fast_forward_fab(self, until: float) -> None:
+        """에피소드 시작 시각을 until(초)로 스킵.
+
+        _advance_fab와 달리 AMR 반송 요청을 처리하지 않음.
+        호출 후 sim.request_queue를 비워야 한다.
+        """
+        from simulation.greedy import get_lots_to_dispatch_by_machine
+        while self._pyscfab.current_time < until:
+            if self._pyscfab.next_decision_point():
+                break
+            if self._pyscfab.current_time >= self._run_to_sec:
+                break
+            while self._pyscfab.usable_machines:
+                m, lots = get_lots_to_dispatch_by_machine(
+                    self._pyscfab, self._ptuple_fcn
+                )
+                if lots is None:
+                    self._pyscfab.usable_machines.discard(m)
+                else:
+                    self._pyscfab.dispatch(m, lots)
+
     # ── gym API ───────────────────────────────────────────
     def reset(self):
         # 에피소드별 결정론 재seed: 같은 (env seed, 에피소드)면 같은 수요 →
@@ -174,6 +198,15 @@ class ChargingFabEnv(gym.Env):
                                          lot_for_machine=True, plugins=[self._hook])
             self._pyscfab.external_transport = False
             self._fab_time = 0.0
+            # 랜덤 시작 시각: 7일치 다양한 공장 구간을 고르게 학습
+            if self.random_start and self._run_to_sec > 0:
+                episode_sec = self.max_steps * self._fab_step_sec
+                max_start = max(0.0, self._run_to_sec - episode_sec)
+                if max_start > 0:
+                    offset = float(self._start_rng.uniform(0, max_start))
+                    self._fast_forward_fab(offset)
+                    self.sim.request_queue = []
+                    self._fab_time = offset
 
         # warm-start: 매 에피소드 랜덤 T로 점프 → cold-start(t=0 빈 공장) 편향 제거.
         # ep_seed로 seed돼 있어 (seed,에피소드)당 결정론 → 정책 간 paired 비교 유지.
@@ -260,7 +293,7 @@ class ChargingFabEnv(gym.Env):
                 return self._encode(amr), False
             if self.sim.current_step >= self.max_steps:
                 self._decision_amr = None
-                return np.zeros(OBS_DIM, dtype=np.float32), True
+                return np.zeros(self.observation_space.shape[0], dtype=np.float32), True
             if self.coupled:           # 실공정을 AMR_STEP_SEC만큼 진행 → 실수요 주입
                 self._advance_fab(self._fab_time + self._fab_step_sec)
                 self._fab_time += self._fab_step_sec
