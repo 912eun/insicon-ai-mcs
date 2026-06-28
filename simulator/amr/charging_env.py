@@ -70,6 +70,8 @@ class ChargingFabEnv(gym.Env):
         n_chargers: int = 3,
         charger_slots: int = 1,           # 충전소당 동시충전 슬롯 — death-spiral 방지 핵심
         dispatch_policy: str = "fifo",    # fifo(최우선 요청) | nearest(최우선 tier 중 픽업 최단)
+        interrupt_charge: bool = False,   # Bischoff interrupt(주문 밀리고 빈 AMR 없으면 충전 중단)
+        interrupt_th: float = 0.5,
     ):
         super().__init__()
         self.w_block, self.w_dl, self.w_sla = w_block, w_dl, w_sla
@@ -100,6 +102,7 @@ class ChargingFabEnv(gym.Env):
             routing=routing, w_cong_route=w_cong_route,
             n_chargers=n_chargers, charger_slots=charger_slots,
             dispatch_policy=dispatch_policy,
+            interrupt_charge=interrupt_charge, interrupt_th=interrupt_th,
         )
         self.max_steps = max_steps
         self._n_amrs   = n_amrs
@@ -266,6 +269,11 @@ class ChargingFabEnv(gym.Env):
                 self._fab_time += self._fab_step_sec
             self.sim.step()
             self._decided.clear()      # 새 sim-step → 결정 재허용
+            # 선택적 sim-step 훅(기본 없음, 학습엔 무영향) — 대시보드 녹화가 결정 단위가 아닌
+            # sim-step 단위로 스냅샷을 찍어 매끄러운(1스텝=1프레임) 재생을 얻도록.
+            cb = getattr(self, "_on_sim_step", None)
+            if cb is not None:
+                cb()
 
     def _pick_decision_amr(self):
         """결정 대상 = idle & 아직 이번 step 미결정 AMR. soc 낮은 순 우선."""
