@@ -299,6 +299,11 @@ class ChargingFabEnv(gym.Env):
                 self._fab_time += self._fab_step_sec
             self.sim.step()
             self._decided.clear()      # 새 sim-step → 결정 재허용
+            # 선택적 sim-step 훅(기본 없음, 학습엔 무영향) — 대시보드 녹화가 결정 단위가 아닌
+            # sim-step 단위로 스냅샷을 찍어 매끄러운(1스텝=1프레임) 재생을 얻도록.
+            cb = getattr(self, "_on_sim_step", None)
+            if cb is not None:
+                cb()
 
     def _pick_decision_amr(self):
         """결정 대상 = idle & 아직 이번 step 미결정 AMR. soc 낮은 순 우선."""
