@@ -92,18 +92,33 @@ def api_decisions():
 
 @app.get("/api/runs")
 def api_runs():
-    """녹화된 replay 목록."""
+    """녹화된 replay 목록 (.jsonl 과 .jsonl.gz 둘 다)."""
     if not RUNS.exists():
         return {"runs": []}
-    return {"runs": sorted(p.stem for p in RUNS.glob("*.jsonl"))}
+    names = {p.stem for p in RUNS.glob("*.jsonl")}
+    names |= {p.name[: -len(".jsonl.gz")] for p in RUNS.glob("*.jsonl.gz")}
+    names.discard("decisions")   # 감사 로그(decisions.jsonl)는 replay 소스 아님
+    return {"runs": sorted(names)}
+
+
+def _open_replay(name: str):
+    """replay 파일 열기 — 평문 .jsonl 우선, 없으면 .jsonl.gz(데모 배포본).
+
+    runs/ 는 gitignore라 대용량 jsonl을 repo에 안 올리는 대신, gz(≈24배 압축)로
+    커밋해 다른 컴퓨터에서도 pull만 하면 데모가 뜨게 한다."""
+    import gzip
+    path = RUNS / f"{name}.jsonl"
+    gz = RUNS / f"{name}.jsonl.gz"
+    if path.exists():
+        return open(path)
+    if gz.exists():
+        return gzip.open(gz, "rt")
+    raise FileNotFoundError(f"no replay '{name}' at {path} or {gz}")
 
 
 # ── 스냅샷 소스 (replay / live) → 동기 제너레이터 ──────────────────
 def _replay_gen(name: str):
-    path = RUNS / f"{name}.jsonl"
-    if not path.exists():
-        raise FileNotFoundError(f"no replay '{name}' at {path}")
-    with open(path) as f:
+    with _open_replay(name) as f:
         for line in f:
             line = line.strip()
             if line:
@@ -151,9 +166,8 @@ def _parse_source(source: str):
 
 def _infer_n_amrs(name: str) -> int:
     """replay 첫 줄에서 AMR 수를 읽어 watcher 비율 임계에 사용."""
-    path = RUNS / f"{name}.jsonl"
     try:
-        with open(path) as f:
+        with _open_replay(name) as f:
             return len(json.loads(f.readline())["amrs"])
     except Exception:  # noqa: BLE001
         return 76
