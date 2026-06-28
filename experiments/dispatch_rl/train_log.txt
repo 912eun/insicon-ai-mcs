@@ -1,0 +1,352 @@
+============================================================
+[Phase 3] DispatchRLEnv — 배정(top-K) + 충전 통합 RL
+  n_amrs=35  battery_scale=8  n_envs=7
+  0.25일 학습  |  coupled(SMT2020)
+  action: Discrete(6) = top-5요청선택/충전
+  obs: 28-dim (13 base + 5×3 request features)
+  routing=lanes  charger_slots=3
+============================================================
+Using cpu device
+Logging to C:\Users\안가은\insicon-ai-mcs\experiments\dispatch_rl\logs\PPO_4
+[TimeLimitCallback] 최대 6.0h 학습
+------------------------------
+| time/              |       |
+|    fps             | 60    |
+|    iterations      | 1     |
+|    time_elapsed    | 237   |
+|    total_timesteps | 14336 |
+------------------------------
+------------------------------------------
+| rollout/                |              |
+|    ep_len_mean          | 3.36e+03     |
+|    ep_rew_mean          | 4.57e+04     |
+| time/                   |              |
+|    fps                  | 16           |
+|    iterations           | 2            |
+|    time_elapsed         | 1742         |
+|    total_timesteps      | 28672        |
+| train/                  |              |
+|    approx_kl            | 0.0056017316 |
+|    clip_fraction        | 0.0187       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.59        |
+|    explained_variance   | 0.0133       |
+|    learning_rate        | 0.0003       |
+|    loss                 | 0.306        |
+|    n_updates            | 10           |
+|    policy_gradient_loss | -0.00267     |
+|    value_loss           | 4.91         |
+------------------------------------------
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 3.35e+03    |
+|    ep_rew_mean          | 4.59e+04    |
+| time/                   |             |
+|    fps                  | 13          |
+|    iterations           | 3           |
+|    time_elapsed         | 3250        |
+|    total_timesteps      | 43008       |
+| train/                  |             |
+|    approx_kl            | 0.005524103 |
+|    clip_fraction        | 0.0286      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.63       |
+|    explained_variance   | 0.78        |
+|    learning_rate        | 0.0003      |
+|    loss                 | -0.0701     |
+|    n_updates            | 20          |
+|    policy_gradient_loss | -0.00541    |
+|    value_loss           | 0.0824      |
+-----------------------------------------
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 3.38e+03    |
+|    ep_rew_mean          | 4.6e+04     |
+| time/                   |             |
+|    fps                  | 13          |
+|    iterations           | 4           |
+|    time_elapsed         | 4410        |
+|    total_timesteps      | 57344       |
+| train/                  |             |
+|    approx_kl            | 0.006210255 |
+|    clip_fraction        | 0.0326      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.62       |
+|    explained_variance   | 0.96        |
+|    learning_rate        | 0.0003      |
+|    loss                 | -0.0768     |
+|    n_updates            | 30          |
+|    policy_gradient_loss | -0.00533    |
+|    value_loss           | 0.0269      |
+-----------------------------------------
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 3.34e+03    |
+|    ep_rew_mean          | 4.61e+04    |
+| time/                   |             |
+|    fps                  | 12          |
+|    iterations           | 5           |
+|    time_elapsed         | 5548        |
+|    total_timesteps      | 71680       |
+| train/                  |             |
+|    approx_kl            | 0.004044173 |
+|    clip_fraction        | 0.0152      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.61       |
+|    explained_variance   | 0.979       |
+|    learning_rate        | 0.0003      |
+|    loss                 | -0.0872     |
+|    n_updates            | 40          |
+|    policy_gradient_loss | -0.00451    |
+|    value_loss           | 0.016       |
+-----------------------------------------
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 3.3e+03     |
+|    ep_rew_mean          | 4.61e+04    |
+| time/                   |             |
+|    fps                  | 13          |
+|    iterations           | 6           |
+|    time_elapsed         | 6582        |
+|    total_timesteps      | 86016       |
+| train/                  |             |
+|    approx_kl            | 0.006418231 |
+|    clip_fraction        | 0.0364      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.61       |
+|    explained_variance   | 0.982       |
+|    learning_rate        | 0.0003      |
+|    loss                 | -0.093      |
+|    n_updates            | 50          |
+|    policy_gradient_loss | -0.00481    |
+|    value_loss           | 0.0149      |
+-----------------------------------------
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 3.32e+03    |
+|    ep_rew_mean          | 4.61e+04    |
+| time/                   |             |
+|    fps                  | 13          |
+|    iterations           | 7           |
+|    time_elapsed         | 7487        |
+|    total_timesteps      | 100352      |
+| train/                  |             |
+|    approx_kl            | 0.004702495 |
+|    clip_fraction        | 0.0277      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.61       |
+|    explained_variance   | 0.983       |
+|    learning_rate        | 0.0003      |
+|    loss                 | -0.0885     |
+|    n_updates            | 60          |
+|    policy_gradient_loss | -0.00523    |
+|    value_loss           | 0.0131      |
+-----------------------------------------
+------------------------------------------
+| rollout/                |              |
+|    ep_len_mean          | 3.37e+03     |
+|    ep_rew_mean          | 4.62e+04     |
+| time/                   |              |
+|    fps                  | 12           |
+|    iterations           | 8            |
+|    time_elapsed         | 8842         |
+|    total_timesteps      | 114688       |
+| train/                  |              |
+|    approx_kl            | 0.0049546356 |
+|    clip_fraction        | 0.0285       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.6         |
+|    explained_variance   | 0.991        |
+|    learning_rate        | 0.0003       |
+|    loss                 | -0.0828      |
+|    n_updates            | 70           |
+|    policy_gradient_loss | -0.00667     |
+|    value_loss           | 0.00639      |
+------------------------------------------
+------------------------------------------
+| rollout/                |              |
+|    ep_len_mean          | 3.36e+03     |
+|    ep_rew_mean          | 4.63e+04     |
+| time/                   |              |
+|    fps                  | 13           |
+|    iterations           | 9            |
+|    time_elapsed         | 9697         |
+|    total_timesteps      | 129024       |
+| train/                  |              |
+|    approx_kl            | 0.0066541717 |
+|    clip_fraction        | 0.0502       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.6         |
+|    explained_variance   | 0.98         |
+|    learning_rate        | 0.0003       |
+|    loss                 | -0.0882      |
+|    n_updates            | 80           |
+|    policy_gradient_loss | -0.00683     |
+|    value_loss           | 0.0152       |
+------------------------------------------
+------------------------------------------
+| rollout/                |              |
+|    ep_len_mean          | 3.32e+03     |
+|    ep_rew_mean          | 4.64e+04     |
+| time/                   |              |
+|    fps                  | 13           |
+|    iterations           | 10           |
+|    time_elapsed         | 10878        |
+|    total_timesteps      | 143360       |
+| train/                  |              |
+|    approx_kl            | 0.0067549176 |
+|    clip_fraction        | 0.0328       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.59        |
+|    explained_variance   | 0.988        |
+|    learning_rate        | 0.0003       |
+|    loss                 | -0.0912      |
+|    n_updates            | 90           |
+|    policy_gradient_loss | -0.00586     |
+|    value_loss           | 0.00729      |
+------------------------------------------
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 3.31e+03    |
+|    ep_rew_mean          | 4.65e+04    |
+| time/                   |             |
+|    fps                  | 13          |
+|    iterations           | 11          |
+|    time_elapsed         | 11963       |
+|    total_timesteps      | 157696      |
+| train/                  |             |
+|    approx_kl            | 0.005178224 |
+|    clip_fraction        | 0.0319      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.58       |
+|    explained_variance   | 0.983       |
+|    learning_rate        | 0.0003      |
+|    loss                 | -0.0761     |
+|    n_updates            | 100         |
+|    policy_gradient_loss | -0.00566    |
+|    value_loss           | 0.0135      |
+-----------------------------------------
+------------------------------------------
+| rollout/                |              |
+|    ep_len_mean          | 3.36e+03     |
+|    ep_rew_mean          | 4.66e+04     |
+| time/                   |              |
+|    fps                  | 11           |
+|    iterations           | 12           |
+|    time_elapsed         | 14343        |
+|    total_timesteps      | 172032       |
+| train/                  |              |
+|    approx_kl            | 0.0065296446 |
+|    clip_fraction        | 0.0433       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.57        |
+|    explained_variance   | 0.987        |
+|    learning_rate        | 0.0003       |
+|    loss                 | -0.105       |
+|    n_updates            | 110          |
+|    policy_gradient_loss | -0.00626     |
+|    value_loss           | 0.00856      |
+------------------------------------------
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 3.38e+03    |
+|    ep_rew_mean          | 4.66e+04    |
+| time/                   |             |
+|    fps                  | 11          |
+|    iterations           | 13          |
+|    time_elapsed         | 16489       |
+|    total_timesteps      | 186368      |
+| train/                  |             |
+|    approx_kl            | 0.004680793 |
+|    clip_fraction        | 0.0251      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.57       |
+|    explained_variance   | 0.983       |
+|    learning_rate        | 0.0003      |
+|    loss                 | -0.0832     |
+|    n_updates            | 120         |
+|    policy_gradient_loss | -0.00497    |
+|    value_loss           | 0.00938     |
+-----------------------------------------
+
+[EvalCB] step=199,997 | VecNorm 저장 → C:\Users\안가은\insicon-ai-mcs\experiments\dispatch_rl\checkpoints\vecnorm_199997.pkl
+[EvalCB] transport_score 평가 중 (seed [100, 101])...
+
+=== Phase 3 평가 | n_amrs=35 | test_seeds=[100, 101] ===
+transport_score :  -233.51  (FIFO baseline: -202.22)
+throughput      :    888.0
+depleted_per_1k :    0.700
+hot_sla_rate    :    0.638
+energy/delivery :    0.679
+dist_per_done   :    148.2
+deadlock_per_1k :    0.000
+utilization     :     83.8%
+--- Attribution ---
+serve_rate      :    0.988
+charge_rate     :    0.012
+[EvalCB] step=199,997 | score=-233.51 | ▼ FIFO 대비 -31.29
+------------------------------------------
+| rollout/                |              |
+|    ep_len_mean          | 3.4e+03      |
+|    ep_rew_mean          | 4.67e+04     |
+| time/                   |              |
+|    fps                  | 11           |
+|    iterations           | 14           |
+|    time_elapsed         | 17909        |
+|    total_timesteps      | 200704       |
+| train/                  |              |
+|    approx_kl            | 0.0056330217 |
+|    clip_fraction        | 0.0358       |
+|    clip_range           | 0.2          |
+|    entropy_loss         | -1.56        |
+|    explained_variance   | 0.979        |
+|    learning_rate        | 0.0003       |
+|    loss                 | -0.0823      |
+|    n_updates            | 130          |
+|    policy_gradient_loss | -0.006       |
+|    value_loss           | 0.0119       |
+------------------------------------------
+-----------------------------------------
+| rollout/                |             |
+|    ep_len_mean          | 3.45e+03    |
+|    ep_rew_mean          | 4.66e+04    |
+| time/                   |             |
+|    fps                  | 10          |
+|    iterations           | 15          |
+|    time_elapsed         | 20645       |
+|    total_timesteps      | 215040      |
+| train/                  |             |
+|    approx_kl            | 0.008771739 |
+|    clip_fraction        | 0.0563      |
+|    clip_range           | 0.2         |
+|    entropy_loss         | -1.57       |
+|    explained_variance   | 0.973       |
+|    learning_rate        | 0.0003      |
+|    loss                 | -0.0914     |
+|    n_updates            | 140         |
+|    policy_gradient_loss | -0.00594    |
+|    value_loss           | 0.00403     |
+-----------------------------------------
+[TimeLimitCallback] 6.00h 경과 → 종료
+
+=== 체크포인트별 transport_score 추이 ===
+      step     score     vs FIFO
+   199,997   -233.51      -31.29
+
+[저장 완료]
+  모델   : C:\Users\안가은\insicon-ai-mcs\experiments\dispatch_rl\drl_n35_bs8_coupled_lanes_seed0_model.zip
+  VecNorm: C:\Users\안가은\insicon-ai-mcs\experiments\dispatch_rl\drl_n35_bs8_coupled_lanes_seed0_vecnorm.pkl
+
+=== Phase 3 평가 | n_amrs=35 | test_seeds=[100, 101, 102, 103] ===
+transport_score :  -235.05  (FIFO baseline: -202.22)
+throughput      :    878.0
+depleted_per_1k :    0.500
+hot_sla_rate    :    0.646
+energy/delivery :    0.689
+dist_per_done   :    150.6
+deadlock_per_1k :    0.100
+utilization     :     84.1%
+--- Attribution ---
+serve_rate      :    0.989
+charge_rate     :    0.011
+
