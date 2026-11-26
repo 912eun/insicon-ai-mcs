@@ -1,0 +1,931 @@
+{
+  "config": {
+    "n_amrs": 5,
+    "request_interval": 10,
+    "grid_size": [
+      159,
+      86
+    ],
+    "n_ports": 1116
+  },
+  "final_kpi": {
+    "step": 100,
+    "throughput": 0,
+    "avg_waiting": 0,
+    "utilization": 100.0,
+    "pending": 15,
+    "deadlocks": 0,
+    "reward": 0.0
+  },
+  "kpi_log": [
+    {
+      "step": 1,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 2,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 3,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 4,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 5,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 6,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 7,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 8,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 9,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 0,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 10,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 11,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 12,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 13,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 14,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 15,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 16,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 17,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 18,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 19,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 2,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 20,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 21,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 22,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 23,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 24,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 25,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 26,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 27,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 28,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 29,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 4,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 30,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 31,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 32,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 33,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 34,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 35,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 36,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 37,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 38,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 39,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 5,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 40,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 41,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 42,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 43,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 44,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 45,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 46,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 47,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 48,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 49,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 7,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 50,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 51,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 52,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 53,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 54,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 55,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 56,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 57,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 58,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 59,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 8,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 60,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 61,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 62,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 63,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 64,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 65,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 66,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 67,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 68,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 69,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 9,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 70,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 71,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 72,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 73,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 74,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 75,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 76,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 77,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 78,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 79,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 80,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 81,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 82,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 83,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 84,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 85,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 86,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 87,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 12,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 88,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 89,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 11,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 90,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 91,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 92,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 93,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 94,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 95,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 96,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 97,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 98,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 99,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 14,
+      "deadlocks": 0,
+      "reward": 0.0
+    },
+    {
+      "step": 100,
+      "throughput": 0,
+      "avg_waiting": 0,
+      "utilization": 100.0,
+      "pending": 15,
+      "deadlocks": 0,
+      "reward": 0.0
+    }
+  ],
+  "interface": {
+    "get_state": "\ud604\uc7ac \uc0c1\ud0dc \ubc18\ud658 (RL observation)",
+    "dispatch": "AMR \ubc30\uc815 (RL action)",
+    "step": "1\uc2a4\ud15d \uc9c4\ud589",
+    "get_reward": "\ubcf4\uc0c1 \ubc18\ud658",
+    "reset": "\ucd08\uae30\ud654",
+    "get_idle_amrs": "idle AMR \ubaa9\ub85d",
+    "get_kpi": "KPI \uc694\uc57d"
+  }
+}

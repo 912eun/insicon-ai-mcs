@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FAB 디지털 트윈 관제</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1 class="brand"><img src="/logo.png" alt="full fab" /></h1>
+    <div class="controls">
+      <select id="source"></select>
+      <button id="connect">연결</button>
+      <button id="playpause" disabled>일시정지</button>
+      <button id="zonebtn" class="toggle on">혼잡 표시</button>
+      <label>속도 <input id="speed" type="range" min="1" max="30" value="8" /></label>
+      <span id="status" class="pill">대기</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="twin">
+      <div class="canvas-wrap">
+        <canvas id="floor"></canvas>
+        <div id="overlay" class="overlay">FAB 디지털 트윈 초기화 중…</div>
+        <div id="inspector" class="inspector hidden">
+          <button id="insp-close" class="insp-close" title="닫기">×</button>
+          <div id="insp-body"></div>
+        </div>
+      </div>
+      <div class="hint" id="hint">AMR을 클릭하면 배터리·운반 상태·목적지를 볼 수 있어요</div>
+      <div class="legend">
+        <span><i class="dot idle"></i>유휴</span>
+        <span><i class="dot moving"></i>이동</span>
+        <span><i class="dot loading"></i>적재</span>
+        <span><i class="dot unloading"></i>하역</span>
+        <span><i class="dot charging"></i>충전</span>
+        <span><i class="dot depleted"></i>방전</span>
+        <span><i class="dot port"></i>포트</span>
+        <span><i class="charger" id="legend-charger"></i>충전소</span>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="kpis" id="kpis"></div>
+
+      <div class="feed">
+        <h2>LLM 관제 보고</h2>
+        <div id="reports"></div>
+      </div>
+
+      <div class="ask">
+        <input id="question" placeholder="관리자 질문 (예: NE 구역이 왜 막혔나?)" />
+        <button id="send">질문</button>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
